@@ -14,9 +14,8 @@ import { router } from 'expo-router';
 
 import { useAuthStore } from '../../src/context/authStore';
 import { getMyStats } from '../../src/api/statistics';
-import {
-  generateQuickTest,
-} from '../../src/api/tests';
+import { generateQuickTest } from '../../src/api/tests';
+import { getMySubscription } from '../../src/api/subscriptions';
 import { useThemeStore } from '../../src/context/themeStore';
 
 import HomeHeader from '../../src/components/home/HomeHeader';
@@ -25,6 +24,7 @@ import ContinueStudyCard from '../../src/components/home/ContinueStudyCard';
 import QuickTestCard from '../../src/components/home/QuickTestCard';
 import QuickActions from '../../src/components/home/QuickActions';
 import ProgressGrid from '../../src/components/home/ProgressGrid';
+import PremiumPromoModal from '../../src/components/home/PremiumPromoModal';
 
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
@@ -34,16 +34,15 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [startingTest, setStartingTest] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
 
   const { width } = useWindowDimensions();
 
-  const isDesktop =
-    Platform.OS === 'web' && width >= 900;
+  const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const load = async () => {
     try {
       const data = await getMyStats();
-
       setStats(data);
       setErrorMsg(null);
     } catch {
@@ -55,9 +54,22 @@ export default function HomeScreen() {
     load();
   }, []);
 
+  // Popup Premium solo si el plan es FREE
+  useEffect(() => {
+    getMySubscription()
+      .then((d) => {
+        const plan = d.limits?.plan || d.subscription?.plan || 'FREE';
+        if (plan === 'FREE' || plan === 'Free') {
+          setShowPremium(true);
+        }
+      })
+      .catch(() => {
+        // Si falla la API, no bloqueamos el Home
+      });
+  }, []);
+
   const onRefresh = async () => {
     setRefreshing(true);
-
     try {
       await load();
     } finally {
@@ -76,21 +88,16 @@ export default function HomeScreen() {
     try {
       const test = await generateQuickTest();
 
-      if (
-        !test?.attemptId ||
-        !test?.questions?.length
-      ) {
+      if (!test?.attemptId || !test?.questions?.length) {
         throw new Error(
           'El backend no devolvió preguntas para este test.',
         );
       }
 
       router.push({
-        pathname:
-          `/test/${test.attemptId}` as any,
+        pathname: `/test/${test.attemptId}` as any,
         params: {
-          payload:
-            JSON.stringify(test),
+          payload: JSON.stringify(test),
         },
       });
     } catch (e: any) {
@@ -104,11 +111,7 @@ export default function HomeScreen() {
         : String(message);
 
       setErrorMsg(text);
-
-      Alert.alert(
-        'Error al generar el test',
-        text,
-      );
+      Alert.alert('Error al generar el test', text);
     } finally {
       setStartingTest(false);
     }
@@ -120,9 +123,7 @@ export default function HomeScreen() {
 
   const goalQuestions = 20;
 
-  const progress = Math.round(
-    (questionsToday / goalQuestions) * 100,
-  );
+  const progress = Math.round((questionsToday / goalQuestions) * 100);
 
   const quickActions = [
     {
@@ -191,15 +192,10 @@ export default function HomeScreen() {
             />
           }
         >
-          <HomeHeader
-            userName={user?.name}
-          />
+          <HomeHeader userName={user?.name} />
 
           <View
-            style={[
-              styles.body,
-              isDesktop && styles.bodyDesktop,
-            ]}
+            style={[styles.body, isDesktop && styles.bodyDesktop]}
           >
             {errorMsg ? (
               <Text
@@ -222,10 +218,7 @@ export default function HomeScreen() {
                       goalQuestions={goalQuestions}
                       xpToday={
                         stats?.xp
-                          ? Math.min(
-                              Number(stats.xp) || 0,
-                              120,
-                            )
+                          ? Math.min(Number(stats.xp) || 0, 120)
                           : 0
                       }
                     />
@@ -237,10 +230,8 @@ export default function HomeScreen() {
                         style={[
                           styles.testLoadingCard,
                           {
-                            backgroundColor:
-                              colors.surface,
-                            borderColor:
-                              colors.border,
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
                           },
                         ]}
                       >
@@ -248,23 +239,17 @@ export default function HomeScreen() {
                           size="large"
                           color={colors.primary}
                         />
-
                         <Text
                           style={[
                             styles.testLoadingText,
-                            {
-                              color:
-                                colors.text,
-                            },
+                            { color: colors.text },
                           ]}
                         >
                           Generando test...
                         </Text>
                       </View>
                     ) : (
-                      <QuickTestCard
-                        onPress={startQuickTest}
-                      />
+                      <QuickTestCard onPress={startQuickTest} />
                     )}
                   </View>
                 </View>
@@ -274,16 +259,12 @@ export default function HomeScreen() {
                     <ContinueStudyCard
                       title="Constitución Española"
                       subtitle="Retoma tu temario ahora"
-                      onPress={() =>
-                        router.push('/(tabs)/study')
-                      }
+                      onPress={() => router.push('/(tabs)/study')}
                     />
                   </View>
 
                   <View style={styles.desktopCol}>
-                    <QuickActions
-                      actions={quickActions}
-                    />
+                    <QuickActions actions={quickActions} />
                   </View>
                 </View>
 
@@ -302,10 +283,7 @@ export default function HomeScreen() {
                   goalQuestions={goalQuestions}
                   xpToday={
                     stats?.xp
-                      ? Math.min(
-                          Number(stats.xp) || 0,
-                          120,
-                        )
+                      ? Math.min(Number(stats.xp) || 0, 120)
                       : 0
                   }
                 />
@@ -313,9 +291,7 @@ export default function HomeScreen() {
                 <ContinueStudyCard
                   title="Constitución Española"
                   subtitle="Retoma tu temario ahora"
-                  onPress={() =>
-                    router.push('/(tabs)/study')
-                  }
+                  onPress={() => router.push('/(tabs)/study')}
                 />
 
                 {startingTest ? (
@@ -323,10 +299,8 @@ export default function HomeScreen() {
                     style={[
                       styles.testLoadingCard,
                       {
-                        backgroundColor:
-                          colors.surface,
-                        borderColor:
-                          colors.border,
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
                       },
                     ]}
                   >
@@ -334,27 +308,20 @@ export default function HomeScreen() {
                       size="large"
                       color={colors.primary}
                     />
-
                     <Text
                       style={[
                         styles.testLoadingText,
-                        {
-                          color: colors.text,
-                        },
+                        { color: colors.text },
                       ]}
                     >
                       Generando test...
                     </Text>
                   </View>
                 ) : (
-                  <QuickTestCard
-                    onPress={startQuickTest}
-                  />
+                  <QuickTestCard onPress={startQuickTest} />
                 )}
 
-                <QuickActions
-                  actions={quickActions}
-                />
+                <QuickActions actions={quickActions} />
 
                 <ProgressGrid
                   xp={stats?.xp ?? user?.xp ?? 0}
@@ -367,6 +334,12 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
       </View>
+
+      {/* Popup Premium encima del Home (no pantalla completa) */}
+      <PremiumPromoModal
+        visible={showPremium}
+        onClose={() => setShowPremium(false)}
+      />
     </View>
   );
 }

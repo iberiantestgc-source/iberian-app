@@ -16,3 +16,13 @@ export async function getMySubscription() {
     };
   };
 }
+
+export async function createCheckoutSession(): Promise<{
+  url: string;
+  sessionId?: string;
+}> {
+  const { data } = await api.post<{ url: string; sessionId?: string }>(
+    '/subscriptions/checkout',
+  );
+  return data;
+}

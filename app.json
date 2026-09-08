@@ -6,28 +6,27 @@
     "orientation": "portrait",
     "scheme": "iberian",
     "userInterfaceStyle": "automatic",
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.iberian.mobile"
     },
-
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0F172A"
       },
       "package": "app.iberian.mobile"
     },
-
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-asset",
       "expo-font"
     ],
-
     "experiments": {
       "typedRoutes": true
+    },
+    "web": {
+      "output": "static"
     }
   }
 }

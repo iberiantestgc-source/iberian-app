@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  Alert,
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -15,7 +14,7 @@ import { colors } from '../src/theme/colors';
 
 export default function SettingsScreen() {
   const [plan, setPlan] = useState('FREE');
-  const [dailyLimit, setDailyLimit] = useState<number | string>(100);
+  const [dailyLimit, setDailyLimit] = useState<number | string>(10);
   const [canUseAI, setCanUseAI] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
@@ -25,9 +24,9 @@ export default function SettingsScreen() {
         setPlan(d.limits?.plan || 'FREE');
         setDailyLimit(
           d.limits?.dailyQuestions === Infinity ||
-            d.limits?.dailyQuestions > 9999
+            (d.limits?.dailyQuestions ?? 0) > 9999
             ? 'Ilimitado'
-            : d.limits?.dailyQuestions ?? 100,
+            : d.limits?.dailyQuestions ?? 10,
         );
         setCanUseAI(!!d.limits?.canUseAI);
       })
@@ -52,15 +51,10 @@ export default function SettingsScreen() {
           <Row label="Tutor IA" value={canUseAI ? 'Incluido' : 'No incluido'} />
         </View>
 
-        {plan === 'FREE' && (
+        {(plan === 'FREE' || plan === 'Free') && (
           <TouchableOpacity
             style={styles.premiumBtn}
-            onPress={() =>
-              Alert.alert(
-                'Premium',
-                'La compra in-app se conectará con Stripe en una próxima versión. Por ahora un admin puede activar Premium desde el panel.',
-              )
-            }
+            onPress={() => router.push('/premium' as any)}
           >
             <Text style={styles.premiumBtnText}>Pasar a Premium</Text>
           </TouchableOpacity>
@@ -144,13 +138,13 @@ const styles = StyleSheet.create({
   rowValue: { color: colors.textMuted, fontWeight: '600' },
   premiumBtn: {
     marginTop: 16,
-    backgroundColor: colors.xp,
+    backgroundColor: colors.xp || '#A78BFA',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
   premiumBtnText: {
-    color: colors.white,
+    color: '#fff',
     fontWeight: '700',
     fontSize: 15,
   },

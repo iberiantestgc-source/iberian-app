@@ -17,8 +17,8 @@ import IberianLynxIcon from '../../src/components/IberianLynxIcon';
 export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
 
-  const [email, setEmail] = useState('admin@iberian.app');
-  const [password, setPassword] = useState('Admin123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,7 +71,7 @@ export default function LoginScreen() {
           <Text style={styles.logo}>IBERIAN</Text>
 
           <Text style={styles.subtitle}>
-            Prepara tu oposición con IA
+            Prepara tu oposición para Guardia Civil
           </Text>
         </View>
 
@@ -80,7 +80,7 @@ export default function LoginScreen() {
 
           <TextInput
             style={styles.input}
-            placeholder="tu@email.com"
+            placeholder="Introduce tu correo electrónico"
             placeholderTextColor="#8B9BB4"
             autoCapitalize="none"
             keyboardType="email-address"

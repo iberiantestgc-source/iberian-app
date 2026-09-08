@@ -108,7 +108,7 @@ export default function RegisterScreen() {
 
           <TextInput
             style={styles.input}
-            placeholder="tu@email.com"
+            placeholder="Introduce tu correo electrónico"
             placeholderTextColor="#8B9BB4"
             autoCapitalize="none"
             keyboardType="email-address"

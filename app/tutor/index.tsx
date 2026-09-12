@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,15 @@ export default function TutorScreen() {
   ]);
   const [loading, setLoading] = useState(false);
 
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+    return () => clearTimeout(t);
+  }, [messages, loading]);
+
   const send = async () => {
     const q = input.trim();
 
@@ -68,19 +77,24 @@ export default function TutorScreen() {
         },
       ]);
     } catch (e: any) {
-      const msg =
+      const raw =
         e?.response?.data?.message ||
+        e?.message ||
         'No se pudo obtener respuesta del tutor';
 
-      const text = Array.isArray(msg)
-        ? msg.join('\n')
-        : String(msg);
+      const text = Array.isArray(raw) ? raw.join('\n') : String(raw);
+
+      const isTimeout =
+        e?.code === 'ECONNABORTED' ||
+        text.toLowerCase().includes('timeout');
 
       setMessages((m) => [
         ...m,
         {
           role: 'assistant',
-          text: `⚠️ ${text}`,
+          text: isTimeout
+            ? '⚠️ El servidor tardó demasiado (a veces está despertando). Espera unos segundos y vuelve a enviar la pregunta.'
+            : `⚠️ ${text}`,
         },
       ]);
 
@@ -103,11 +117,7 @@ export default function TutorScreen() {
           backgroundColor: colors.background,
         },
       ]}
-      behavior={
-        Platform.OS === 'ios'
-          ? 'padding'
-          : undefined
-      }
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={80}
     >
       {/* ====================================================== */}
@@ -128,11 +138,7 @@ export default function TutorScreen() {
           style={styles.backBtn}
           activeOpacity={0.7}
         >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={colors.text}
-          />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
@@ -144,11 +150,7 @@ export default function TutorScreen() {
               },
             ]}
           >
-            <Ionicons
-              name="sparkles"
-              size={18}
-              color={colors.primary}
-            />
+            <Ionicons name="sparkles" size={18} color={colors.primary} />
           </View>
 
           <Text
@@ -185,11 +187,7 @@ export default function TutorScreen() {
           }
         >
           <Ionicons
-            name={
-              mode === 'night'
-                ? 'sunny-outline'
-                : 'moon-outline'
-            }
+            name={mode === 'night' ? 'sunny-outline' : 'moon-outline'}
             size={21}
             color={colors.primary}
           />
@@ -201,6 +199,7 @@ export default function TutorScreen() {
       {/* ====================================================== */}
 
       <ScrollView
+        ref={scrollRef}
         style={[
           styles.chat,
           {
@@ -209,10 +208,12 @@ export default function TutorScreen() {
         ]}
         contentContainerStyle={styles.chatContent}
         keyboardShouldPersistTaps="handled"
+        onContentSizeChange={() =>
+          scrollRef.current?.scrollToEnd({ animated: true })
+        }
       >
         {messages.map((m, i) => {
-          const isUser =
-            m.role === 'user';
+          const isUser = m.role === 'user';
 
           return (
             <View
@@ -248,17 +249,14 @@ export default function TutorScreen() {
                     ? [
                         styles.bubbleUser,
                         {
-                          backgroundColor:
-                            colors.primary,
+                          backgroundColor: colors.primary,
                         },
                       ]
                     : [
                         styles.bubbleAssistant,
                         {
-                          backgroundColor:
-                            colors.surface,
-                          borderColor:
-                            colors.border,
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
                         },
                       ],
                 ]}
@@ -308,8 +306,7 @@ export default function TutorScreen() {
               style={[
                 styles.avatar,
                 {
-                  backgroundColor:
-                    `${colors.primary}18`,
+                  backgroundColor: `${colors.primary}18`,
                 },
               ]}
             >
@@ -325,29 +322,23 @@ export default function TutorScreen() {
                 styles.bubble,
                 styles.bubbleAssistant,
                 {
-                  backgroundColor:
-                    colors.surface,
-                  borderColor:
-                    colors.border,
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
                 },
               ]}
             >
               <View style={styles.loadingRow}>
-                <ActivityIndicator
-                  color={colors.primary}
-                  size="small"
-                />
+                <ActivityIndicator color={colors.primary} size="small" />
 
                 <Text
                   style={[
                     styles.loadingText,
                     {
-                      color:
-                        colors.textMuted,
+                      color: colors.textMuted,
                     },
                   ]}
                 >
-                  El tutor está pensando...
+                  El tutor está pensando (puede tardar hasta 1 min)...
                 </Text>
               </View>
             </View>
@@ -363,10 +354,8 @@ export default function TutorScreen() {
         style={[
           styles.inputContainer,
           {
-            backgroundColor:
-              colors.background,
-            borderTopColor:
-              colors.border,
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
           },
         ]}
       >
@@ -374,10 +363,8 @@ export default function TutorScreen() {
           style={[
             styles.inputRow,
             {
-              backgroundColor:
-                colors.surface,
-              borderColor:
-                colors.border,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
             },
           ]}
         >
@@ -389,31 +376,30 @@ export default function TutorScreen() {
               },
             ]}
             placeholder="Escribe tu duda..."
-            placeholderTextColor={
-              colors.textMuted
-            }
+            placeholderTextColor={colors.textMuted}
             value={input}
             onChangeText={setInput}
             multiline
             maxLength={2000}
             textAlignVertical="center"
+            editable={!loading}
+            onSubmitEditing={() => {
+              if (Platform.OS !== 'web') {
+                void send();
+              }
+            }}
           />
 
           <TouchableOpacity
             style={[
               styles.sendBtn,
               {
-                backgroundColor:
-                  colors.primary,
+                backgroundColor: colors.primary,
               },
-              (!input.trim() ||
-                loading) &&
-                styles.sendDisabled,
+              (!input.trim() || loading) && styles.sendDisabled,
             ]}
             onPress={send}
-            disabled={
-              !input.trim() || loading
-            }
+            disabled={!input.trim() || loading}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -428,8 +414,7 @@ export default function TutorScreen() {
           style={[
             styles.inputHint,
             {
-              color:
-                colors.textMuted,
+              color: colors.textMuted,
             },
           ]}
         >
@@ -570,10 +555,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
+    flexShrink: 1,
   },
 
   loadingText: {
     fontSize: 13,
+    flexShrink: 1,
   },
 
   /* ========================================================= */
@@ -583,10 +570,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     paddingHorizontal: 12,
     paddingTop: 9,
-    paddingBottom:
-      Platform.OS === 'ios'
-        ? 18
-        : 10,
+    paddingBottom: Platform.OS === 'ios' ? 18 : 10,
     borderTopWidth: 1,
   },
 

@@ -132,7 +132,7 @@ export default function HomeScreen() {
       label: 'Comunidad',
       icon: 'people-outline' as const,
       onPress: () =>
-  Linking.openURL('https://chat.whatsapp.com/JsOe12eKytMD4K6xT9wPgz'),
+        Linking.openURL('https://chat.whatsapp.com/JsOe12eKytMD4K6xT9wPgz'),
     },
     {
       key: 'ia',
@@ -259,9 +259,13 @@ export default function HomeScreen() {
                 <View style={styles.desktopRow}>
                   <View style={styles.desktopCol}>
                     <ContinueStudyCard
-                      title="Constitución Española"
-                      subtitle="Retoma tu temario ahora"
-                      onPress={() => router.push('/(tabs)/study')}
+                      title="Temario Completo"
+                      subtitle="Retoma tu estudio ahora"
+                      onPress={() =>
+                        Linking.openURL(
+                          'https://drive.google.com/drive/folders/1MTCT0MSratkXD7XECb5axfTpkTD1Kzca?usp=drive_link',
+                        )
+                      }
                     />
                   </View>
 
@@ -293,7 +297,11 @@ export default function HomeScreen() {
                 <ContinueStudyCard
                   title="Constitución Española"
                   subtitle="Retoma tu temario ahora"
-                  onPress={() => router.push('/(tabs)/study')}
+                  onPress={() =>
+                    Linking.openURL(
+                      'https://drive.google.com/drive/folders/1MTCT0MSratkXD7XECb5axfTpkTD1Kzca?usp=drive_link',
+                    )
+                  }
                 />
 
                 {startingTest ? (

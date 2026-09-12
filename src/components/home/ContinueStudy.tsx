@@ -10,7 +10,7 @@ type Props = {
 };
 
 export default function ContinueStudyCard({
-  title = 'Constitución Española',
+  title = 'Temario Completo',
   subtitle = 'Continúa donde lo dejaste',
   onPress,
 }: Props) {

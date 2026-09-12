@@ -1,3 +1,4 @@
+import { Linking } from 'react-native';
 import { useEffect, useState } from 'react';
 import {
   View,
@@ -127,10 +128,11 @@ export default function HomeScreen() {
 
   const quickActions = [
     {
-      key: 'temas',
-      label: 'Temas',
-      icon: 'library' as const,
-      onPress: () => router.push('/(tabs)/study'),
+      key: 'Comunidad',
+      label: 'Comunidad',
+      icon: 'people-outline' as const,
+      onPress: () =>
+  Linking.openURL('https://chat.whatsapp.com/JsOe12eKytMD4K6xT9wPgz'),
     },
     {
       key: 'ia',

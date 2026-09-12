@@ -25,6 +25,9 @@ import * as SecureStore from 'expo-secure-store';
 // Si existe EXPO_PUBLIC_API_URL, se utilizará
 // esa URL. En caso contrario, se utilizará
 // automáticamente el backend de producción.
+//
+// Local (opcional, en .env de la app):
+// EXPO_PUBLIC_API_URL=http://localhost:3000/api/v1
 // =============================================
 
 const API_URL =
@@ -47,7 +50,9 @@ export { API_URL };
 
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  // Render (plan free) puede tardar al despertar;
+  // tutor IA + Gemini pueden superar 30s.
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -158,9 +163,7 @@ export async function getRefreshToken(): Promise<
 // =============================================
 
 api.interceptors.request.use(
-  async (
-    config: InternalAxiosRequestConfig,
-  ) => {
+  async (config: InternalAxiosRequestConfig) => {
     const isPublicAuthRoute =
       config.url === '/auth/login' ||
       config.url === '/auth/register' ||
@@ -172,8 +175,7 @@ api.interceptors.request.use(
       const token = await getAccessToken();
 
       if (token) {
-        config.headers.Authorization =
-          `Bearer ${token}`;
+        config.headers.Authorization = `Bearer ${token}`;
       }
     }
 
@@ -193,8 +195,7 @@ api.interceptors.request.use(
 // tiempo.
 // =============================================
 
-let refreshing:
-  Promise<string | null> | null = null;
+let refreshing: Promise<string | null> | null = null;
 
 // =============================================
 // INTERCEPTOR DE RESPUESTAS
@@ -203,24 +204,18 @@ let refreshing:
 api.interceptors.response.use(
   (response) => response,
 
-  async (
-    error: AxiosError,
-  ) => {
-    const originalRequest =
-      error.config as
-        | (InternalAxiosRequestConfig & {
-            _retry?: boolean;
-          })
-        | undefined;
+  async (error: AxiosError) => {
+    const originalRequest = error.config as
+      | (InternalAxiosRequestConfig & {
+          _retry?: boolean;
+        })
+      | undefined;
 
     // ===========================================
     // Si no es 401, devolver el error directamente
     // ===========================================
 
-    if (
-      error.response?.status !== 401 ||
-      !originalRequest
-    ) {
+    if (error.response?.status !== 401 || !originalRequest) {
       return Promise.reject(error);
     }
 
@@ -256,8 +251,7 @@ api.interceptors.response.use(
     if (!refreshing) {
       refreshing = (async () => {
         try {
-          const refreshToken =
-            await getRefreshToken();
+          const refreshToken = await getRefreshToken();
 
           if (!refreshToken) {
             return null;
@@ -277,10 +271,9 @@ api.interceptors.response.use(
               refreshToken,
             },
             {
-              timeout: 15000,
+              timeout: 60000,
               headers: {
-                'Content-Type':
-                  'application/json',
+                'Content-Type': 'application/json',
               },
             },
           );
@@ -297,10 +290,7 @@ api.interceptors.response.use(
             return null;
           }
 
-          await saveTokens(
-            data.accessToken,
-            data.refreshToken,
-          );
+          await saveTokens(data.accessToken, data.refreshToken);
 
           return data.accessToken;
         } catch (refreshError) {
@@ -322,19 +312,14 @@ api.interceptors.response.use(
     // ESPERAR AL REFRESH
     // ===========================================
 
-    const newAccessToken =
-      await refreshing;
+    const newAccessToken = await refreshing;
 
     // ===========================================
     // REINTENTAR PETICIÓN ORIGINAL
     // ===========================================
 
-    if (
-      newAccessToken &&
-      originalRequest.headers
-    ) {
-      originalRequest.headers.Authorization =
-        `Bearer ${newAccessToken}`;
+    if (newAccessToken && originalRequest.headers) {
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 
       return api(originalRequest);
     }

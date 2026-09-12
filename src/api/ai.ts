@@ -77,7 +77,7 @@ export interface TutorResponse {
     hasLaw?: boolean;
     recentMistakes?: number;
   };
-  mode?: 'openai' | 'mock';
+  mode?: 'openai' | 'mock' | 'gemini';
   model?: string;
 }
 
@@ -88,8 +88,8 @@ export interface TutorResponse {
 /**
  * Envía una pregunta al tutor IA.
  *
- * El token JWT se añade automáticamente mediante
- * el interceptor de src/api/client.ts.
+ * - Timeout 60s (Render + Gemini pueden ir lentos)
+ * - 1 reintento automático en timeout / red / 5xx
  *
  * Backend:
  * POST /api/v1/ai/tutor
@@ -97,14 +97,45 @@ export interface TutorResponse {
 export async function askTutor(
   datos: TutorQuestionInput,
 ): Promise<TutorResponse> {
-  try {
-    const response = await api.post<TutorResponse>(
-      '/ai/tutor',
-      datos,
-    );
+  const doRequest = () =>
+    api.post<TutorResponse>('/ai/tutor', datos, {
+      timeout: 60000,
+    });
 
+  try {
+    const response = await doRequest();
     return response.data;
   } catch (error: any) {
+    const status = error?.response?.status as number | undefined;
+    const code = String(error?.code || '');
+    const message = String(error?.message || '').toLowerCase();
+
+    const isTimeout =
+      code === 'ECONNABORTED' || message.includes('timeout');
+    const isNetwork = !error?.response;
+    const isServerError = typeof status === 'number' && status >= 500;
+
+    if (isTimeout || isNetwork || isServerError) {
+      console.warn(
+        '[IBERIAN][AI] Reintento tutor tras fallo:',
+        error?.response?.data || error?.message || error,
+      );
+
+      try {
+        await new Promise((r) => setTimeout(r, 600));
+        const retry = await doRequest();
+        return retry.data;
+      } catch (retryError: any) {
+        console.error(
+          '❌ Error preguntando al tutor IA (reintento):',
+          retryError?.response?.data ||
+            retryError?.message ||
+            retryError,
+        );
+        throw retryError;
+      }
+    }
+
     console.error(
       '❌ Error preguntando al tutor IA:',
       error?.response?.data || error?.message || error,
@@ -154,10 +185,9 @@ export async function generarPlanIA(datos: {
   estadosRecientes?: string[];
 }) {
   try {
-    const response = await api.post(
-      '/ia/generar-plan',
-      datos,
-    );
+    const response = await api.post('/ia/generar-plan', datos, {
+      timeout: 60000,
+    });
 
     return response.data?.data ?? response.data;
   } catch (error: any) {
@@ -185,10 +215,9 @@ export async function generarPlanEstudio(datos: {
   porcentajeDominio: Record<string, number>;
 }) {
   try {
-    const response = await api.post(
-      '/ia/plan',
-      datos,
-    );
+    const response = await api.post('/ia/plan', datos, {
+      timeout: 60000,
+    });
 
     return response.data?.data ?? response.data;
   } catch (error: any) {
@@ -213,13 +242,10 @@ export async function registrarEstadoAnimo(
   plan?: any;
 }> {
   try {
-    const response = await api.post(
-      '/ia/estado-animo',
-      {
-        estado,
-        observaciones,
-      },
-    );
+    const response = await api.post('/ia/estado-animo', {
+      estado,
+      observaciones,
+    });
 
     return response.data?.data ?? response.data;
   } catch (error: any) {
@@ -240,9 +266,7 @@ export async function obtenerPerfil(
   uid: string,
 ): Promise<PerfilUsuario> {
   try {
-    const response = await api.get(
-      `/ia/perfil/${uid}`,
-    );
+    const response = await api.get(`/ia/perfil/${uid}`);
 
     return response.data?.data ?? response.data;
   } catch (error: any) {
@@ -287,9 +311,7 @@ export async function obtenerComparativa(
   uid: string,
 ): Promise<ComparativaUsuario> {
   try {
-    const response = await api.get(
-      `/ia/comparativa/${uid}`,
-    );
+    const response = await api.get(`/ia/comparativa/${uid}`);
 
     return response.data?.data ?? response.data;
   } catch (error: any) {
@@ -312,14 +334,11 @@ export async function generarTestPersonalizado(
   dificultad: 'facil' | 'media' | 'dificil' = 'media',
 ): Promise<any[]> {
   try {
-    const response = await api.post(
-      '/ia/test-personalizado',
-      {
-        temas,
-        numPreguntas,
-        dificultad,
-      },
-    );
+    const response = await api.post('/ia/test-personalizado', {
+      temas,
+      numPreguntas,
+      dificultad,
+    });
 
     const data = response.data?.data ?? response.data;
 
@@ -344,14 +363,11 @@ export async function ajustarPlanPorEstado(
   historial: any,
 ): Promise<any> {
   try {
-    const response = await api.post(
-      '/ia/ajustar-plan',
-      {
-        estado,
-        planActual,
-        historial,
-      },
-    );
+    const response = await api.post('/ia/ajustar-plan', {
+      estado,
+      planActual,
+      historial,
+    });
 
     return response.data?.data ?? response.data;
   } catch (error: any) {

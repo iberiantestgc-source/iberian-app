@@ -32,40 +32,79 @@ const BENEFITS = [
   'Sin límites del plan Free',
 ];
 
+function extractErrorMessage(e: any): string {
+  const data = e?.response?.data;
+
+  if (typeof data?.message === 'string') {
+    return data.message;
+  }
+
+  if (Array.isArray(data?.message)) {
+    return data.message.join('\n');
+  }
+
+  if (typeof data?.error === 'string') {
+    return data.error;
+  }
+
+  if (e?.message === 'Network Error') {
+    return 'No se pudo conectar con el servidor. Comprueba tu conexión o que el backend esté activo.';
+  }
+
+  if (typeof e?.message === 'string' && e.message.length > 0) {
+    return e.message;
+  }
+
+  return 'No se pudo iniciar el pago.';
+}
+
+function goBackSafe() {
+  if (router.canGoBack()) {
+    router.back();
+    return;
+  }
+
+  router.replace('/settings' as any);
+}
+
+function openCheckoutUrl(url: string) {
+  if (Platform.OS === 'web') {
+    // Misma pestaña: más fiable que popup (a menudo bloqueado)
+    if (typeof window !== 'undefined') {
+      window.location.href = url;
+    }
+    return;
+  }
+
+  return Linking.openURL(url);
+}
+
 export default function PremiumScreen() {
   const [loading, setLoading] = useState(false);
 
   const startCheckout = async () => {
+    if (loading) {
+      return;
+    }
+
     try {
       setLoading(true);
 
       const data = await createCheckoutSession();
 
-      if (!data?.url) {
-        throw new Error('No se recibió la URL de pago');
+      if (!data?.url || typeof data.url !== 'string') {
+        throw new Error('No se recibió la URL de pago del servidor');
       }
 
-      // En web Linking a veces no abre; usamos window.open
-      if (Platform.OS === 'web') {
-        const opened = window.open(data.url, '_blank');
-        if (!opened) {
-          // Si el navegador bloquea el popup, ir en la misma pestaña
-          window.location.href = data.url;
-        }
-      } else {
-        const can = await Linking.canOpenURL(data.url);
-        if (!can) {
-          throw new Error('No se puede abrir el enlace de pago');
-        }
-        await Linking.openURL(data.url);
+      if (!data.url.startsWith('https://')) {
+        throw new Error('La URL de pago no es válida');
       }
+
+      await openCheckoutUrl(data.url);
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.message ||
-        'No se pudo iniciar el pago.';
-      Alert.alert('Error', String(msg));
-      console.log('Checkout error:', e);
+      const msg = extractErrorMessage(e);
+      Alert.alert('Error al iniciar el pago', msg);
+      console.log('Checkout error:', e?.response?.status, e?.response?.data || e);
     } finally {
       setLoading(false);
     }
@@ -74,7 +113,7 @@ export default function PremiumScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={goBackSafe} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -88,6 +127,9 @@ export default function PremiumScreen() {
           <Ionicons name="diamond" size={40} color={colors.xp} />
           <Text style={[styles.title, { color: colors.text }]}>
             IBERIAN Premium
+          </Text>
+          <Text style={[styles.price, { color: colors.xp }]}>
+            Desde Stripe Checkout
           </Text>
           <Text style={[styles.subtitle, { color: colors.textMuted }]}>
             Prepárate sin límites y con todas las herramientas.
@@ -115,7 +157,8 @@ export default function PremiumScreen() {
         </View>
 
         <Text style={[styles.note, { color: colors.textMuted }]}>
-          Modo prueba de Stripe. No se cobra dinero real hasta activar live.
+          El precio exacto se muestra en la página segura de Stripe. Modo
+          prueba: no se cobra dinero real hasta activar Live.
         </Text>
 
         <TouchableOpacity
@@ -134,7 +177,7 @@ export default function PremiumScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.back()} style={styles.cancel}>
+        <TouchableOpacity onPress={goBackSafe} style={styles.cancel}>
           <Text style={[styles.cancelText, { color: colors.textMuted }]}>
             Ahora no
           </Text>
@@ -159,6 +202,12 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   hero: { alignItems: 'center', marginTop: 12, marginBottom: 24 },
   title: { marginTop: 12, fontSize: 26, fontWeight: '900' },
+  price: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   subtitle: {
     marginTop: 8,
     fontSize: 14,

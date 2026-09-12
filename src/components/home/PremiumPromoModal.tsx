@@ -9,6 +9,7 @@ import {
   Alert,
   Linking,
   Pressable,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createCheckoutSession } from '../../api/subscriptions';
@@ -18,22 +19,74 @@ type Props = {
   onClose: () => void;
 };
 
+function extractErrorMessage(e: any): string {
+  const data = e?.response?.data;
+
+  if (typeof data?.message === 'string') {
+    return data.message;
+  }
+
+  if (Array.isArray(data?.message)) {
+    return data.message.join('\n');
+  }
+
+  if (typeof data?.error === 'string') {
+    return data.error;
+  }
+
+  if (e?.message === 'Network Error') {
+    return 'No se pudo conectar con el servidor. Comprueba tu conexión o que el backend esté activo.';
+  }
+
+  if (typeof e?.message === 'string' && e.message.length > 0) {
+    return e.message;
+  }
+
+  return 'No se pudo iniciar el pago';
+}
+
+async function openCheckoutUrl(url: string) {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') {
+      window.location.href = url;
+    }
+    return;
+  }
+
+  await Linking.openURL(url);
+}
+
 export default function PremiumPromoModal({ visible, onClose }: Props) {
   const [loading, setLoading] = useState(false);
 
   const pay = async () => {
+    if (loading) {
+      return;
+    }
+
     try {
       setLoading(true);
+
       const data = await createCheckoutSession();
-      if (!data?.url) throw new Error('No se recibió la URL de pago');
-      await Linking.openURL(data.url);
+
+      if (!data?.url || typeof data.url !== 'string') {
+        throw new Error('No se recibió la URL de pago');
+      }
+
+      if (!data.url.startsWith('https://')) {
+        throw new Error('La URL de pago no es válida');
+      }
+
+      // Cerrar el modal antes de salir a Stripe
       onClose();
+
+      await openCheckoutUrl(data.url);
     } catch (e: any) {
-      Alert.alert(
-        'Error',
-        e?.response?.data?.message ||
-          e?.message ||
-          'No se pudo iniciar el pago',
+      Alert.alert('Error al iniciar el pago', extractErrorMessage(e));
+      console.log(
+        'Checkout modal error:',
+        e?.response?.status,
+        e?.response?.data || e,
       );
     } finally {
       setLoading(false);

@@ -24,7 +24,7 @@ export default function SettingsScreen() {
         setPlan(d.limits?.plan || 'FREE');
         setDailyLimit(
           d.limits?.dailyQuestions === Infinity ||
-            (d.limits?.dailyQuestions ?? 0) > 9999
+            (d.limits?.dailyQuestions ?? 0) > 99999
             ? 'Ilimitado'
             : d.limits?.dailyQuestions ?? 10,
         );

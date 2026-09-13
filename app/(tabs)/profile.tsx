@@ -21,7 +21,7 @@ import { uploadAvatar } from '../../src/api/users';
 import { useThemeStore } from '../../src/context/themeStore';
 
 export default function ProfileScreen() {
-  const { user, logout, loadUser } = useAuthStore();
+  const { user, logout, loadUser, setUser } = useAuthStore();
   const { colors } = useThemeStore();
   const [stats, setStats] = useState<any>(null);
   const [plan, setPlan] = useState('FREE');
@@ -30,13 +30,18 @@ export default function ProfileScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   useEffect(() => {
+    // Refresca perfil (avatar firmado desde GET /users/me)
+    void loadUser?.();
+
     getMyStats()
       .then(setStats)
       .catch(() => {});
     getMySubscription()
-      .then((d) => setPlan(d.limits?.plan || d.subscription?.plan || 'FREE'))
+      .then((d) =>
+        setPlan(d.limits?.plan || d.subscription?.plan || 'FREE'),
+      )
       .catch(() => {});
-  }, []);
+  }, [loadUser]);
 
   const name = user?.name || 'Usuario';
   const email = user?.email || '';
@@ -55,19 +60,22 @@ export default function ProfileScreen() {
     try {
       await logout();
     } finally {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/login' as any);
     }
   };
 
   const handleChangePhoto = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(
-          'Permiso necesario',
-          'Necesitamos acceso a la galería para cambiar tu foto de perfil.',
-        );
-        return;
+      if (Platform.OS !== 'web') {
+        const permission =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert(
+            'Permiso necesario',
+            'Necesitamos acceso a la galería para cambiar tu foto de perfil.',
+          );
+          return;
+        }
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -89,18 +97,35 @@ export default function ProfileScreen() {
         asset.mimeType || 'image/jpeg',
       );
 
-      // Actualizamos el usuario en el store
+      const nextUrl =
+        (response as any)?.avatarUrl ||
+        (response as any)?.user?.avatarUrl ||
+        null;
+
+      if (nextUrl && user) {
+        setUser({
+          ...user,
+          avatarUrl: nextUrl,
+        });
+      }
+
       if (loadUser) {
         await loadUser();
       }
 
-      Alert.alert('Foto actualizada', 'Tu foto de perfil se ha guardado correctamente.');
+      Alert.alert(
+        'Foto actualizada',
+        'Tu foto de perfil se ha guardado correctamente.',
+      );
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.message ||
-        'No se pudo subir la foto. Comprueba que el endpoint /users/me/avatar esté creado en el backend.';
-      Alert.alert('Error', String(msg));
+      const raw = e?.response?.data?.message || e?.message;
+      const msg = Array.isArray(raw)
+        ? raw.join('\n')
+        : String(
+            raw ||
+              'No se pudo subir la foto. Comprueba PATCH /users/me/avatar y el campo file.',
+          );
+      Alert.alert('Error', msg);
     } finally {
       setUploading(false);
     }
@@ -112,14 +137,14 @@ export default function ProfileScreen() {
       label: 'Mis favoritos',
       icon: 'star' as const,
       color: '#FBBF24',
-      onPress: () => router.push('/(tabs)/study'),
+      onPress: () => router.push('/(tabs)/study' as any),
     },
     {
       key: 'fail',
       label: 'Mis falladas',
       icon: 'close-circle' as const,
       color: '#F87171',
-      onPress: () => router.push('/(tabs)/study'),
+      onPress: () => router.push('/(tabs)/study' as any),
     },
     {
       key: 'history',
@@ -134,7 +159,7 @@ export default function ProfileScreen() {
       icon: 'trophy' as const,
       color: colors.primary,
       value: '—',
-      onPress: () => router.push('/achievements'),
+      onPress: () => router.push('/achievements' as any),
     },
     {
       key: 'sub',
@@ -142,8 +167,12 @@ export default function ProfileScreen() {
       icon: 'diamond' as const,
       color: '#A78BFA',
       value:
-        plan === 'PREMIUM' || plan === 'Premium' ? 'Premium' : 'Free',
-      onPress: () => router.push('/settings'),
+        plan === 'PREMIUM' ||
+        plan === 'Premium' ||
+        String(plan).includes('PREMIUM')
+          ? 'Premium'
+          : 'Free',
+      onPress: () => router.push('/settings' as any),
     },
   ];
 
@@ -194,7 +223,9 @@ export default function ProfileScreen() {
     <View style={styles.userInfoBlock}>
       <Text style={[styles.name, { color: colors.text }]}>{name}</Text>
       {email ? (
-        <Text style={[styles.email, { color: colors.textMuted }]}>{email}</Text>
+        <Text style={[styles.email, { color: colors.textMuted }]}>
+          {email}
+        </Text>
       ) : null}
       <Text style={[styles.level, { color: colors.textMuted }]}>
         Nivel {level}
@@ -204,7 +235,10 @@ export default function ProfileScreen() {
         <View
           style={[
             styles.xpTrack,
-            { backgroundColor: colors.surfaceElevated || colors.surface },
+            {
+              backgroundColor:
+                (colors as any).surfaceElevated || colors.surface,
+            },
           ]}
         >
           <View
@@ -308,7 +342,7 @@ export default function ProfileScreen() {
         styles.root,
         {
           backgroundColor: isDesktop
-            ? colors.backgroundAlt || colors.background
+            ? (colors as any).backgroundAlt || colors.background
             : colors.background,
         },
       ]}
@@ -334,9 +368,13 @@ export default function ProfileScreen() {
                   borderColor: colors.border,
                 },
               ]}
-              onPress={() => router.push('/settings')}
+              onPress={() => router.push('/settings' as any)}
             >
-              <Ionicons name="settings-outline" size={22} color={colors.text} />
+              <Ionicons
+                name="settings-outline"
+                size={22}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               style={[
@@ -346,7 +384,7 @@ export default function ProfileScreen() {
                   borderColor: colors.border,
                 },
               ]}
-              onPress={() => router.push('/notifications')}
+              onPress={() => router.push('/notifications' as any)}
             >
               <Ionicons
                 name="notifications-outline"
@@ -385,10 +423,18 @@ export default function ProfileScreen() {
                 <StatsRow />
                 <MenuBlock />
                 <TouchableOpacity
-                  style={[styles.logoutBtn, { borderColor: colors.danger }]}
+                  style={[
+                    styles.logoutBtn,
+                    { borderColor: (colors as any).danger || '#F87171' },
+                  ]}
                   onPress={handleLogout}
                 >
-                  <Text style={[styles.logoutText, { color: colors.danger }]}>
+                  <Text
+                    style={[
+                      styles.logoutText,
+                      { color: (colors as any).danger || '#F87171' },
+                    ]}
+                  >
                     Cerrar sesión
                   </Text>
                 </TouchableOpacity>
@@ -401,10 +447,18 @@ export default function ProfileScreen() {
               <StatsRow />
               <MenuBlock />
               <TouchableOpacity
-                style={[styles.logoutBtn, { borderColor: colors.danger }]}
+                style={[
+                  styles.logoutBtn,
+                  { borderColor: (colors as any).danger || '#F87171' },
+                ]}
                 onPress={handleLogout}
               >
-                <Text style={[styles.logoutText, { color: colors.danger }]}>
+                <Text
+                  style={[
+                    styles.logoutText,
+                    { color: (colors as any).danger || '#F87171' },
+                  ]}
+                >
                   Cerrar sesión
                 </Text>
               </TouchableOpacity>

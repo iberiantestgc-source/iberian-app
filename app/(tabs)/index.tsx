@@ -27,6 +27,19 @@ import QuickActions from '../../src/components/home/QuickActions';
 import ProgressGrid from '../../src/components/home/ProgressGrid';
 import PremiumPromoModal from '../../src/components/home/PremiumPromoModal';
 
+const WHATSAPP_COMMUNITY_URL =
+  'https://chat.whatsapp.com/JsOe12eKytMD4K6xT9wPgz';
+
+function isPremiumPlan(plan: string | undefined | null): boolean {
+  const p = String(plan || 'FREE').toUpperCase();
+  return (
+    p === 'PREMIUM' ||
+    p === 'PREMIUM_MONTHLY' ||
+    p === 'PREMIUM_YEARLY' ||
+    p.includes('PREMIUM')
+  );
+}
+
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { colors } = useThemeStore();
@@ -36,10 +49,12 @@ export default function HomeScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [startingTest, setStartingTest] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
+  const [plan, setPlan] = useState('FREE');
 
   const { width } = useWindowDimensions();
 
   const isDesktop = Platform.OS === 'web' && width >= 900;
+  const isPremium = isPremiumPlan(plan);
 
   const load = async () => {
     try {
@@ -55,17 +70,20 @@ export default function HomeScreen() {
     load();
   }, []);
 
-  // Popup Premium solo si el plan es FREE
+  // Plan + popup Premium solo si FREE
   useEffect(() => {
     getMySubscription()
       .then((d) => {
-        const plan = d.limits?.plan || d.subscription?.plan || 'FREE';
-        if (plan === 'FREE' || plan === 'Free') {
+        const p =
+          d.limits?.plan || d.subscription?.plan || 'FREE';
+        setPlan(p);
+
+        if (!isPremiumPlan(p)) {
           setShowPremium(true);
         }
       })
       .catch(() => {
-        // Si falla la API, no bloqueamos el Home
+        setPlan('FREE');
       });
   }, []);
 
@@ -76,6 +94,25 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const openCommunity = () => {
+    if (!isPremium) {
+      Alert.alert(
+        'Solo Premium',
+        'La comunidad de WhatsApp está disponible solo para usuarios Premium.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Hacerme Premium',
+            onPress: () => router.push('/premium' as any),
+          },
+        ],
+      );
+      return;
+    }
+
+    void Linking.openURL(WHATSAPP_COMMUNITY_URL);
   };
 
   const startQuickTest = async () => {
@@ -129,10 +166,9 @@ export default function HomeScreen() {
   const quickActions = [
     {
       key: 'Comunidad',
-      label: 'Comunidad',
+      label: isPremium ? 'Comunidad' : 'Comunidad 🔒',
       icon: 'people-outline' as const,
-      onPress: () =>
-        Linking.openURL('https://chat.whatsapp.com/JsOe12eKytMD4K6xT9wPgz'),
+      onPress: openCommunity,
     },
     {
       key: 'ia',
@@ -295,7 +331,7 @@ export default function HomeScreen() {
                 />
 
                 <ContinueStudyCard
-                  title="Constitución Española"
+                  title="Temario Completo"
                   subtitle="Retoma tu temario ahora"
                   onPress={() =>
                     Linking.openURL(
@@ -345,7 +381,6 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      {/* Popup Premium encima del Home (no pantalla completa) */}
       <PremiumPromoModal
         visible={showPremium}
         onClose={() => setShowPremium(false)}

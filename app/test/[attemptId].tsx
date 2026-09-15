@@ -55,13 +55,20 @@ const createInitialQuestionState = (): QuestionState => ({
 function normalizeCorrectionMode(
   value?: string | string[],
 ): CorrectionMode {
-  const normalized = Array.isArray(value)
-    ? value[0]
-    : value;
+  const normalized = Array.isArray(value) ? value[0] : value;
+  return normalized === 'finish' ? 'finish' : 'immediate';
+}
 
-  return normalized === 'finish'
-    ? 'finish'
-    : 'immediate';
+/** Baraja respuestas solo para la UI. No cambia los id. */
+function shuffleArray<T>(items: T[]): T[] {
+  const array = [...items];
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = array[i];
+    array[i] = array[j];
+    array[j] = tmp;
+  }
+  return array;
 }
 
 export default function TestScreen() {
@@ -75,12 +82,9 @@ export default function TestScreen() {
   const { width } = useWindowDimensions();
   const loadUser = useAuthStore((state) => state.loadUser);
 
-  const isDesktop =
-    Platform.OS === 'web' && width >= 1000;
+  const isDesktop = Platform.OS === 'web' && width >= 1000;
 
-  const correctionMode = normalizeCorrectionMode(
-    params.correctionMode,
-  );
+  const correctionMode = normalizeCorrectionMode(params.correctionMode);
 
   const test: GeneratedTest | null = useMemo(() => {
     try {
@@ -92,21 +96,27 @@ export default function TestScreen() {
         return null;
       }
 
-      const parsed = JSON.parse(
-        payload,
-      ) as GeneratedTest;
+      const parsed = JSON.parse(payload) as GeneratedTest;
 
-      return parsed;
+      if (!parsed?.questions?.length) {
+        return parsed;
+      }
+
+      return {
+        ...parsed,
+        questions: parsed.questions.map((question) => ({
+          ...question,
+          answers: shuffleArray(question.answers ?? []),
+        })),
+      };
     } catch {
       return null;
     }
   }, [params.payload]);
 
-  const [index, setIndex] = useState(0);
-
-  const [questionStates, setQuestionStates] =
-    useState<QuestionState[]>([]);
-
+  const [questionStates, setQuestionStates] = useState<QuestionState[]>(
+    [],
+  );
   const [submitting, setSubmitting] =
     useState(false);
 
@@ -116,13 +126,10 @@ export default function TestScreen() {
   const [finished, setFinished] =
     useState<TestResult | null>(null);
 
-  const [favoriteLoading, setFavoriteLoading] =
-    useState(false);
+  const [favoriteLoadingIndex, setFavoriteLoadingIndex] =
+    useState<number | null>(null);
 
   const [loadingFavorites, setLoadingFavorites] =
-    useState(false);
-
-  const [showQuestionNavigator, setShowQuestionNavigator] =
     useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] =
@@ -159,6 +166,7 @@ export default function TestScreen() {
     if (
       !test ||
       finished ||
+      finishing ||
       !test.timeLimitSec
     ) {
       return;
@@ -182,7 +190,7 @@ export default function TestScreen() {
     return () => {
       clearInterval(timer);
     };
-  }, [test, finished]);
+  }, [test, finished, finishing]);
 
   /*
    * Finalización automática cuando se agota el tiempo.
@@ -210,7 +218,7 @@ export default function TestScreen() {
   ]);
 
   /*
-   * Comprobar favoritos de las preguntas.
+   * Comprobar favoritos de todas las preguntas.
    */
   useEffect(() => {
     if (!test?.questions?.length) {
@@ -333,17 +341,6 @@ export default function TestScreen() {
 
   const loadedTest = test;
 
-  const question =
-    loadedTest.questions[index];
-
-  const currentState =
-    questionStates[index] ??
-    createInitialQuestionState();
-
-  const isLast =
-    index >=
-    loadedTest.questions.length - 1;
-
   const answeredCount =
     questionStates.filter(
       (state) => state.answered,
@@ -438,15 +435,31 @@ export default function TestScreen() {
   /*
    * FAVORITO
    */
-  const toggleFavorite = async () => {
+  const toggleFavorite = async (
+    questionIndex: number,
+  ) => {
+    const question =
+      loadedTest.questions[
+        questionIndex
+      ];
+
+    const currentState =
+      questionStates[
+        questionIndex
+      ] ??
+      createInitialQuestionState();
+
     if (
       !question ||
-      favoriteLoading
+      favoriteLoadingIndex !== null ||
+      finishing
     ) {
       return;
     }
 
-    setFavoriteLoading(true);
+    setFavoriteLoadingIndex(
+      questionIndex,
+    );
 
     try {
       if (currentState.favorite) {
@@ -455,7 +468,7 @@ export default function TestScreen() {
         );
 
         updateQuestionState(
-          index,
+          questionIndex,
           {
             favorite: false,
           },
@@ -466,7 +479,7 @@ export default function TestScreen() {
         );
 
         updateQuestionState(
-          index,
+          questionIndex,
           {
             favorite: true,
           },
@@ -484,16 +497,30 @@ export default function TestScreen() {
           : String(msg),
       );
     } finally {
-      setFavoriteLoading(false);
+      setFavoriteLoadingIndex(
+        null,
+      );
     }
   };
 
   /*
    * MARCAR PARA REPASAR
    */
-  const toggleReview = () => {
+  const toggleReview = (
+    questionIndex: number,
+  ) => {
+    const currentState =
+      questionStates[
+        questionIndex
+      ] ??
+      createInitialQuestionState();
+
+    if (finishing) {
+      return;
+    }
+
     updateQuestionState(
-      index,
+      questionIndex,
       {
         markedForReview:
           !currentState.markedForReview,
@@ -505,8 +532,20 @@ export default function TestScreen() {
    * CORRECCIÓN INMEDIATA
    */
   const onSelectImmediate = async (
+    questionIndex: number,
     answerId: string,
   ) => {
+    const question =
+      loadedTest.questions[
+        questionIndex
+      ];
+
+    const currentState =
+      questionStates[
+        questionIndex
+      ] ??
+      createInitialQuestionState();
+
     if (
       !question ||
       currentState.submitted ||
@@ -517,7 +556,7 @@ export default function TestScreen() {
     }
 
     updateQuestionState(
-      index,
+      questionIndex,
       {
         selectedAnswerId:
           answerId,
@@ -537,7 +576,7 @@ export default function TestScreen() {
         );
 
       updateQuestionState(
-        index,
+        questionIndex,
         {
           selectedAnswerId:
             answerId,
@@ -549,7 +588,7 @@ export default function TestScreen() {
       );
     } catch (e: any) {
       updateQuestionState(
-        index,
+        questionIndex,
         {
           selectedAnswerId:
             null,
@@ -574,17 +613,15 @@ export default function TestScreen() {
    * CORRECCIÓN AL FINAL
    */
   const onSelectDeferred = (
+    questionIndex: number,
     answerId: string,
   ) => {
-    if (
-      !question ||
-      finishing
-    ) {
+    if (finishing) {
       return;
     }
 
     updateQuestionState(
-      index,
+      questionIndex,
       {
         selectedAnswerId:
           answerId,
@@ -597,6 +634,7 @@ export default function TestScreen() {
   };
 
   const onSelect = (
+    questionIndex: number,
     answerId: string,
   ) => {
     if (
@@ -604,12 +642,14 @@ export default function TestScreen() {
       'immediate'
     ) {
       void onSelectImmediate(
+        questionIndex,
         answerId,
       );
       return;
     }
 
     onSelectDeferred(
+      questionIndex,
       answerId,
     );
   };
@@ -617,11 +657,29 @@ export default function TestScreen() {
   /*
    * DEJAR EN BLANCO
    */
-  const markBlank = async () => {
+  const markBlank = async (
+    questionIndex: number,
+  ) => {
+    const question =
+      loadedTest.questions[
+        questionIndex
+      ];
+
+    const currentState =
+      questionStates[
+        questionIndex
+      ] ??
+      createInitialQuestionState();
+
     if (
       !question ||
       submitting ||
-      finishing
+      finishing ||
+      (
+        correctionMode ===
+          'immediate' &&
+        currentState.submitted
+      )
     ) {
       return;
     }
@@ -631,7 +689,7 @@ export default function TestScreen() {
       'finish'
     ) {
       updateQuestionState(
-        index,
+        questionIndex,
         {
           selectedAnswerId:
             null,
@@ -654,7 +712,7 @@ export default function TestScreen() {
       );
 
       updateQuestionState(
-        index,
+        questionIndex,
         {
           selectedAnswerId:
             null,
@@ -673,57 +731,6 @@ export default function TestScreen() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  /*
-   * NAVEGACIÓN
-   */
-  const goToQuestion = (
-    questionIndex: number,
-  ) => {
-    if (
-      questionIndex < 0 ||
-      questionIndex >=
-        loadedTest.questions.length
-    ) {
-      return;
-    }
-
-    setIndex(questionIndex);
-    setShowQuestionNavigator(
-      false,
-    );
-  };
-
-  const next = () => {
-    if (
-      correctionMode ===
-        'immediate' &&
-      !currentState.submitted
-    ) {
-      return;
-    }
-
-    if (isLast) {
-      void doFinish();
-      return;
-    }
-
-    setIndex(
-      (previous) =>
-        previous + 1,
-    );
-  };
-
-  const previous = () => {
-    if (index <= 0) {
-      return;
-    }
-
-    setIndex(
-      (previous) =>
-        previous - 1,
-    );
   };
 
   /*
@@ -748,6 +755,9 @@ export default function TestScreen() {
         correctionMode ===
         'finish'
       ) {
+        const states =
+          questionStates;
+
         for (
           let i = 0;
           i <
@@ -755,7 +765,7 @@ export default function TestScreen() {
           i++
         ) {
           const state =
-            questionStates[i];
+            states[i];
 
           const currentQuestion =
             loadedTest.questions[i];
@@ -821,6 +831,13 @@ export default function TestScreen() {
       finished.newAchievements ||
       [];
 
+    const percentage =
+      Number(
+        finished.percentage ??
+          finished.score ??
+          0,
+      ) || 0;
+
     return (
       <ScrollView
         style={[
@@ -872,9 +889,7 @@ export default function TestScreen() {
           ]}
         >
           {Math.round(
-            Number(
-              finished.score,
-            ) || 0,
+            percentage,
           )}
           %
         </Text>
@@ -1010,63 +1025,6 @@ export default function TestScreen() {
     );
   }
 
-  if (!question) {
-    return (
-      <View
-        style={[
-          styles.center,
-          {
-            backgroundColor:
-              colors.background,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.errorText,
-            {
-              color: colors.text,
-            },
-          ]}
-        >
-          Pregunta no disponible
-        </Text>
-
-        <TouchableOpacity
-          onPress={() =>
-            router.back()
-          }
-        >
-          <Text
-            style={[
-              styles.link,
-              {
-                color:
-                  colors.primary,
-              },
-            ]}
-          >
-            Volver
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const currentResult =
-    currentState.result;
-
-  const selectedAnswerId =
-    currentState.selectedAnswerId;
-
-  const correctAnswerId =
-    currentResult?.correctAnswerId;
-
-  const showImmediateResult =
-    correctionMode ===
-      'immediate' &&
-    !!currentResult;
-
   return (
     <View
       style={[
@@ -1094,6 +1052,7 @@ export default function TestScreen() {
           onPress={() =>
             router.back()
           }
+          disabled={finishing}
           style={[
             styles.topIconButton,
             {
@@ -1101,6 +1060,8 @@ export default function TestScreen() {
                 colors.surface,
               borderColor:
                 colors.border,
+              opacity:
+                finishing ? 0.5 : 1,
             },
           ]}
         >
@@ -1111,14 +1072,7 @@ export default function TestScreen() {
           />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() =>
-            setShowQuestionNavigator(
-              (previous) =>
-                !previous,
-            )
-          }
+        <View
           style={
             styles.progressCenter
           }
@@ -1132,8 +1086,11 @@ export default function TestScreen() {
               },
             ]}
           >
-            Pregunta {index + 1} /{' '}
-            {loadedTest.totalQuestions}
+            Test ·{' '}
+            {
+              loadedTest.totalQuestions
+            }{' '}
+            preguntas
           </Text>
 
           <Text
@@ -1151,75 +1108,37 @@ export default function TestScreen() {
               ? `${remainingCount} pendientes`
               : 'completado'}
           </Text>
-        </TouchableOpacity>
+        </View>
 
         <View
           style={styles.topActions}
         >
-          <TouchableOpacity
-            onPress={
-              toggleFavorite
-            }
-            disabled={
-              favoriteLoading ||
-              loadingFavorites
-            }
+          <View
             style={[
-              styles.topIconButton,
+              styles.counterBadge,
               {
                 backgroundColor:
-                  currentState.favorite
-                    ? `${colors.primary}18`
-                    : colors.surface,
+                  colors.surface,
                 borderColor:
-                  currentState.favorite
-                    ? colors.primary
-                    : colors.border,
+                  colors.border,
               },
             ]}
           >
-            <Ionicons
-              name={
-                currentState.favorite
-                  ? 'star'
-                  : 'star-outline'
-              }
-              size={20}
-              color={
-                currentState.favorite
-                  ? colors.primary
-                  : colors.textMuted
-              }
-            />
-          </TouchableOpacity>
-
-          {isDesktop && (
-            <TouchableOpacity
-              onPress={() =>
-                setShowQuestionNavigator(
-                  (previous) =>
-                    !previous,
-                )
-              }
+            <Text
               style={[
-                styles.topIconButton,
+                styles.counterBadgeText,
                 {
-                  backgroundColor:
-                    colors.surface,
-                  borderColor:
-                    colors.border,
+                  color:
+                    colors.text,
                 },
               ]}
             >
-              <Ionicons
-                name="grid-outline"
-                size={19}
-                color={
-                  colors.text
-                }
-              />
-            </TouchableOpacity>
-          )}
+              {answeredCount}/
+              {
+                loadedTest.totalQuestions
+              }
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -1297,60 +1216,49 @@ export default function TestScreen() {
             styles.mainAreaDesktop,
         ]}
       >
-        <View
-          style={[
-            styles.questionPanel,
+        <ScrollView
+          showsVerticalScrollIndicator={
+            false
+          }
+          contentContainerStyle={[
+            styles.questionsContent,
             isDesktop &&
-              styles.questionPanelDesktop,
+              styles.questionsContentDesktop,
           ]}
         >
-          <ScrollView
-            showsVerticalScrollIndicator={
-              false
-            }
-            contentContainerStyle={
-              styles.questionContent
-            }
-          >
-            <View
-              style={
-                styles.questionHeader
-              }
-            >
-              <View
-                style={
-                  styles.questionBadge
-                }
-              >
-                <Text
-                  style={[
-                    styles.questionBadgeText,
-                    {
-                      color:
-                        colors.primary,
-                    },
-                  ]}
-                >
-                  PREGUNTA {index + 1}
-                </Text>
-              </View>
+          {loadedTest.questions.map(
+            (
+              question,
+              questionIndex,
+            ) => {
+              const currentState =
+                questionStates[
+                  questionIndex
+                ] ??
+                createInitialQuestionState();
 
-              <View
-                style={
-                  styles.questionActions
-                }
-              >
-                <TouchableOpacity
-                  onPress={
-                    toggleReview
-                  }
+              const currentResult =
+                currentState.result;
+
+              const selectedAnswerId =
+                currentState.selectedAnswerId;
+
+              const correctAnswerId =
+                currentResult?.correctAnswerId;
+
+              const showImmediateResult =
+                correctionMode ===
+                  'immediate' &&
+                !!currentResult;
+
+              return (
+                <View
+                  key={question.id}
                   style={[
-                    styles.actionButton,
+                    styles.questionCard,
                     {
                       backgroundColor:
-                        currentState.markedForReview
-                          ? `${colors.primary}18`
-                          : colors.surface,
+                        colors.surface,
                       borderColor:
                         currentState.markedForReview
                           ? colors.primary
@@ -1358,894 +1266,766 @@ export default function TestScreen() {
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={
-                      currentState.markedForReview
-                        ? 'bookmark'
-                        : 'bookmark-outline'
+                  <View
+                    style={
+                      styles.questionHeader
                     }
-                    size={18}
-                    color={
-                      currentState.markedForReview
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  />
+                  >
+                    <View
+                      style={
+                        styles.questionHeaderLeft
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.questionBadge,
+                          {
+                            backgroundColor:
+                              `${colors.primary}12`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.questionBadgeText,
+                            {
+                              color:
+                                colors.primary,
+                            },
+                          ]}
+                        >
+                          PREGUNTA{' '}
+                          {questionIndex +
+                            1}
+                        </Text>
+                      </View>
+
+                      {currentState.answered && (
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor:
+                                currentState.blank
+                                  ? `${colors.textMuted}18`
+                                  : `${colors.primary}18`,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              {
+                                color:
+                                  currentState.blank
+                                    ? colors.textMuted
+                                    : colors.primary,
+                              },
+                            ]}
+                          >
+                            {currentState.blank
+                              ? 'EN BLANCO'
+                              : currentResult
+                              ? currentResult.isCorrect
+                                ? 'CORRECTA'
+                                : 'INCORRECTA'
+                              : 'CONTESTADA'}
+                          </Text>
+                        </View>
+                      )}
+
+                      {currentState.markedForReview && (
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor:
+                                `${colors.primary}18`,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              {
+                                color:
+                                  colors.primary,
+                              },
+                            ]}
+                          >
+                            REPASAR
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View
+                      style={
+                        styles.questionActions
+                      }
+                    >
+                      <TouchableOpacity
+                        onPress={() =>
+                          toggleReview(
+                            questionIndex,
+                          )
+                        }
+                        disabled={
+                          finishing
+                        }
+                        style={[
+                          styles.actionButton,
+                          {
+                            backgroundColor:
+                              currentState.markedForReview
+                                ? `${colors.primary}18`
+                                : colors.background,
+                            borderColor:
+                              currentState.markedForReview
+                                ? colors.primary
+                                : colors.border,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            currentState.markedForReview
+                              ? 'bookmark'
+                              : 'bookmark-outline'
+                          }
+                          size={18}
+                          color={
+                            currentState.markedForReview
+                              ? colors.primary
+                              : colors.textMuted
+                          }
+                        />
+
+                        <Text
+                          style={[
+                            styles.actionText,
+                            {
+                              color:
+                                currentState.markedForReview
+                                  ? colors.primary
+                                  : colors.textMuted,
+                            },
+                          ]}
+                        >
+                          Repasar
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() =>
+                          toggleFavorite(
+                            questionIndex,
+                          )
+                        }
+                        disabled={
+                          favoriteLoadingIndex !==
+                            null ||
+                          loadingFavorites ||
+                          finishing
+                        }
+                        style={[
+                          styles.actionButton,
+                          {
+                            backgroundColor:
+                              currentState.favorite
+                                ? `${colors.primary}18`
+                                : colors.background,
+                            borderColor:
+                              currentState.favorite
+                                ? colors.primary
+                                : colors.border,
+                          },
+                        ]}
+                      >
+                        {favoriteLoadingIndex ===
+                        questionIndex ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={
+                              colors.primary
+                            }
+                          />
+                        ) : (
+                          <Ionicons
+                            name={
+                              currentState.favorite
+                                ? 'star'
+                                : 'star-outline'
+                            }
+                            size={18}
+                            color={
+                              currentState.favorite
+                                ? colors.primary
+                                : colors.textMuted
+                            }
+                          />
+                        )}
+
+                        <Text
+                          style={[
+                            styles.actionText,
+                            {
+                              color:
+                                currentState.favorite
+                                  ? colors.primary
+                                  : colors.textMuted,
+                            },
+                          ]}
+                        >
+                          Favorito
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
                   <Text
                     style={[
-                      styles.actionText,
+                      styles.statement,
                       {
                         color:
-                          currentState.markedForReview
-                            ? colors.primary
-                            : colors.textMuted,
+                          colors.text,
                       },
                     ]}
                   >
-                    Repasar
+                    {
+                      question.statement
+                    }
                   </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
+                  {question.answers.map(
+                    (answer) => {
+                      let backgroundColor =
+                        colors.background;
+
+                      let borderColor =
+                        colors.border;
+
+                      const answerTextColor =
+                        colors.text;
+
+                      if (
+                        showImmediateResult
+                      ) {
+                        if (
+                          correctAnswerId &&
+                          answer.id ===
+                            correctAnswerId
+                        ) {
+                          backgroundColor =
+                            `${colors.primary}20`;
+
+                          borderColor =
+                            colors.primary;
+                        } else if (
+                          answer.id ===
+                            selectedAnswerId &&
+                          currentResult &&
+                          !currentResult.isCorrect
+                        ) {
+                          backgroundColor =
+                            `${colors.danger}18`;
+
+                          borderColor =
+                            colors.danger;
+                        }
+                      } else if (
+                        answer.id ===
+                        selectedAnswerId
+                      ) {
+                        backgroundColor =
+                          `${colors.primary}20`;
+
+                        borderColor =
+                          colors.primary;
+                      }
+
+                      return (
+                        <TouchableOpacity
+                          key={
+                            answer.id
+                          }
+                          activeOpacity={
+                            0.85
+                          }
+                          style={[
+                            styles.answer,
+                            {
+                              backgroundColor,
+                              borderColor,
+                            },
+                          ]}
+                          onPress={() =>
+                            onSelect(
+                              questionIndex,
+                              answer.id,
+                            )
+                          }
+                          disabled={
+                            submitting ||
+                            finishing ||
+                            (
+                              correctionMode ===
+                                'immediate' &&
+                              currentState.submitted
+                            )
+                          }
+                        >
+                          <View
+                            style={[
+                              styles.answerIndicator,
+                              {
+                                borderColor,
+                                backgroundColor:
+                                  answer.id ===
+                                  selectedAnswerId
+                                    ? borderColor
+                                    : 'transparent',
+                              },
+                            ]}
+                          >
+                            {answer.id ===
+                              selectedAnswerId && (
+                              <Ionicons
+                                name="checkmark"
+                                size={13}
+                                color={
+                                  colors.primaryText
+                                }
+                              />
+                            )}
+                          </View>
+
+                          <Text
+                            style={[
+                              styles.answerText,
+                              {
+                                color:
+                                  answerTextColor,
+                              },
+                            ]}
+                          >
+                            {
+                              answer.text
+                            }
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    },
+                  )}
+
+                  {/* EXPLICACIÓN */}
+
+                  {showImmediateResult &&
+                  currentResult?.explanation ? (
+                    <View
+                      style={[
+                        styles.explanation,
+                        {
+                          backgroundColor:
+                            colors.background,
+                          borderColor:
+                            currentResult.isCorrect
+                              ? colors.primary
+                              : colors.danger,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={
+                          styles.explanationHeader
+                        }
+                      >
+                        <Ionicons
+                          name={
+                            currentResult.isCorrect
+                              ? 'checkmark-circle'
+                              : 'close-circle'
+                          }
+                          size={21}
+                          color={
+                            currentResult.isCorrect
+                              ? colors.primary
+                              : colors.danger
+                          }
+                        />
+
+                        <Text
+                          style={[
+                            styles.explanationTitle,
+                            {
+                              color:
+                                colors.text,
+                            },
+                          ]}
+                        >
+                          {currentResult.isCorrect
+                            ? 'Correcto'
+                            : 'Incorrecto'}
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.explanationText,
+                          {
+                            color:
+                              colors.textMuted,
+                          },
+                        ]}
+                      >
+                        {
+                          currentResult.explanation
+                        }
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* EN BLANCO */}
+
+                  {currentState.blank ? (
+                    <View
+                      style={[
+                        styles.blankNotice,
+                        {
+                          backgroundColor:
+                            `${colors.textMuted}10`,
+                          borderColor:
+                            colors.border,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="remove-circle-outline"
+                        size={19}
+                        color={
+                          colors.textMuted
+                        }
+                      />
+
+                      <Text
+                        style={[
+                          styles.blankNoticeText,
+                          {
+                            color:
+                              colors.textMuted,
+                          },
+                        ]}
+                      >
+                        Esta pregunta se
+                        dejará en blanco.
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* ACCIONES DE PREGUNTA */}
+
+                  <View
+                    style={[
+                      styles.questionFooter,
+                      {
+                        borderTopColor:
+                          colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.questionFooterText,
+                        {
+                          color:
+                            colors.textMuted,
+                        },
+                      ]}
+                    >
+                      {currentState.answered
+                        ? currentState.blank
+                          ? 'Sin respuesta'
+                          : currentResult
+                          ? currentResult.isCorrect
+                            ? 'Respuesta correcta'
+                            : 'Respuesta incorrecta'
+                          : 'Respuesta seleccionada'
+                        : 'Pendiente de respuesta'}
+                    </Text>
+
+                    <TouchableOpacity
+                      onPress={() =>
+                        markBlank(
+                          questionIndex,
+                        )
+                      }
+                      disabled={
+                        submitting ||
+                        finishing ||
+                        (
+                          correctionMode ===
+                            'immediate' &&
+                          currentState.submitted
+                        )
+                      }
+                      style={[
+                        styles.blankButton,
+                        {
+                          backgroundColor:
+                            currentState.blank
+                              ? `${colors.primary}18`
+                              : colors.background,
+                          borderColor:
+                            currentState.blank
+                              ? colors.primary
+                              : colors.border,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="remove-circle-outline"
+                        size={17}
+                        color={
+                          currentState.blank
+                            ? colors.primary
+                            : colors.textMuted
+                        }
+                      />
+
+                      <Text
+                        style={[
+                          styles.blankButtonText,
+                          {
+                            color:
+                              currentState.blank
+                                ? colors.primary
+                                : colors.textMuted,
+                          },
+                        ]}
+                      >
+                        {currentState.blank
+                          ? 'En blanco'
+                          : 'Dejar en blanco'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            },
+          )}
+
+          {/* RESUMEN FINAL */}
+
+          <View
+            style={[
+              styles.finalSummary,
+              {
+                backgroundColor:
+                  colors.surface,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
             <Text
               style={[
-                styles.statement,
+                styles.finalSummaryTitle,
                 {
                   color:
                     colors.text,
                 },
               ]}
             >
-              {
-                question.statement
-              }
+              Resumen del test
             </Text>
 
-            {question.answers.map(
-              (answer) => {
-                let backgroundColor =
-                  colors.surface;
-
-                let borderColor =
-                  colors.border;
-
-                const answerTextColor =
-                  colors.text;
-
-                if (
-                  showImmediateResult
-                ) {
-                  if (
-                    correctAnswerId &&
-                    answer.id ===
-                      correctAnswerId
-                  ) {
-                    backgroundColor =
-                      `${colors.primary}20`;
-
-                    borderColor =
-                      colors.primary;
-                  } else if (
-                    answer.id ===
-                      selectedAnswerId &&
-                    currentResult &&
-                    !currentResult.isCorrect
-                  ) {
-                    backgroundColor =
-                      `${colors.danger}18`;
-
-                    borderColor =
-                      colors.danger;
-                  }
-                } else if (
-                  answer.id ===
-                  selectedAnswerId
-                ) {
-                  backgroundColor =
-                    `${colors.primary}20`;
-
-                  borderColor =
-                    colors.primary;
+            <View
+              style={
+                styles.finalSummaryStats
+              }
+            >
+              <View
+                style={
+                  styles.finalSummaryStat
                 }
+              >
+                <Text
+                  style={[
+                    styles.finalSummaryNumber,
+                    {
+                      color:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  {answeredCount}
+                </Text>
 
-                return (
-                  <TouchableOpacity
-                    key={
-                      answer.id
-                    }
-                    activeOpacity={
-                      0.85
-                    }
-                    style={[
-                      styles.answer,
-                      {
-                        backgroundColor,
-                        borderColor,
-                      },
-                    ]}
-                    onPress={() =>
-                      onSelect(
-                        answer.id,
-                      )
-                    }
-                    disabled={
-                      submitting ||
-                      finishing ||
-                      (correctionMode ===
-                        'immediate' &&
-                        currentState.submitted)
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.answerIndicator,
-                        {
-                          borderColor,
-                          backgroundColor:
-                            answer.id ===
-                            selectedAnswerId
-                              ? borderColor
-                              : 'transparent',
-                        },
-                      ]}
-                    >
-                      {answer.id ===
-                        selectedAnswerId && (
-                        <Ionicons
-                          name="checkmark"
-                          size={13}
-                          color={
-                            colors.primaryText
-                          }
-                        />
-                      )}
-                    </View>
+                <Text
+                  style={[
+                    styles.finalSummaryLabel,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  Contestadas
+                </Text>
+              </View>
 
-                    <Text
-                      style={[
-                        styles.answerText,
-                        {
-                          color:
-                            answerTextColor,
-                        },
-                      ]}
-                    >
-                      {
-                        answer.text
-                      }
-                    </Text>
-                  </TouchableOpacity>
-                );
-              },
+              <View
+                style={
+                  styles.finalSummaryStat
+                }
+              >
+                <Text
+                  style={[
+                    styles.finalSummaryNumber,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  {remainingCount}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.finalSummaryLabel,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  Pendientes
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.finalSummaryStat
+                }
+              >
+                <Text
+                  style={[
+                    styles.finalSummaryNumber,
+                    {
+                      color:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  {reviewCount}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.finalSummaryLabel,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  Para repasar
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.finalSummaryStat
+                }
+              >
+                <Text
+                  style={[
+                    styles.finalSummaryNumber,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  {blankCount}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.finalSummaryLabel,
+                    {
+                      color:
+                        colors.textMuted,
+                    },
+                  ]}
+                >
+                  En blanco
+                </Text>
+              </View>
+            </View>
+
+            {remainingCount > 0 && (
+              <Text
+                style={[
+                  styles.finalSummaryHint,
+                  {
+                    color:
+                      colors.textMuted,
+                  },
+                ]}
+              >
+                Las preguntas pendientes se
+                considerarán en blanco al
+                finalizar el test.
+              </Text>
             )}
 
-            {/* EXPLICACIÓN */}
-
-            {showImmediateResult &&
-            currentResult?.explanation ? (
-              <View
-                style={[
-                  styles.explanation,
-                  {
-                    backgroundColor:
-                      colors.surface,
-                    borderColor:
-                      currentResult.isCorrect
-                        ? colors.primary
-                        : colors.danger,
-                  },
-                ]}
-              >
-                <View
-                  style={
-                    styles.explanationHeader
-                  }
-                >
-                  <Ionicons
-                    name={
-                      currentResult.isCorrect
-                        ? 'checkmark-circle'
-                        : 'close-circle'
-                    }
-                    size={21}
-                    color={
-                      currentResult.isCorrect
-                        ? colors.primary
-                        : colors.danger
-                    }
-                  />
-
-                  <Text
-                    style={[
-                      styles.explanationTitle,
-                      {
-                        color:
-                          colors.text,
-                      },
-                    ]}
-                  >
-                    {currentResult.isCorrect
-                      ? 'Correcto'
-                      : 'Incorrecto'}
-                  </Text>
-                </View>
-
-                <Text
-                  style={[
-                    styles.explanationText,
-                    {
-                      color:
-                        colors.textMuted,
-                    },
-                  ]}
-                >
-                  {
-                    currentResult.explanation
-                  }
-                </Text>
-              </View>
-            ) : null}
-
-            {/* EN BLANCO */}
-
-            {correctionMode ===
-              'finish' &&
-            currentState.blank ? (
-              <View
-                style={[
-                  styles.blankNotice,
-                  {
-                    backgroundColor:
-                      `${colors.primary}10`,
-                    borderColor:
-                      colors.border,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="remove-circle-outline"
-                  size={19}
-                  color={
-                    colors.primary
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.blankNoticeText,
-                    {
-                      color:
-                        colors.textMuted,
-                    },
-                  ]}
-                >
-                  Esta pregunta se
-                  dejará en blanco.
-                </Text>
-              </View>
-            ) : null}
-          </ScrollView>
-
-          {/* BARRA INFERIOR */}
-
-          <View
-            style={[
-              styles.bottomBar,
-              {
-                backgroundColor:
-                  colors.background,
-                borderTopColor:
-                  colors.border,
-              },
-            ]}
-          >
             <TouchableOpacity
-              onPress={
-                previous
-              }
-              disabled={
-                index === 0 ||
-                finishing
-              }
-              style={[
-                styles.navigationButton,
-                {
-                  backgroundColor:
-                    colors.surface,
-                  borderColor:
-                    colors.border,
-                  opacity:
-                    index === 0
-                      ? 0.4
-                      : 1,
-                },
-              ]}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={19}
-                color={
-                  colors.text
-                }
-              />
-
-              <Text
-                style={[
-                  styles.navigationText,
-                  {
-                    color:
-                      colors.text,
-                  },
-                ]}
-              >
-                Anterior
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={
-                markBlank
-              }
-              disabled={
-                submitting ||
-                finishing ||
-                (correctionMode ===
-                  'immediate' &&
-                  currentState.submitted)
-              }
-              style={[
-                styles.blankButton,
-                {
-                  backgroundColor:
-                    currentState.blank
-                      ? `${colors.primary}18`
-                      : colors.surface,
-                  borderColor:
-                    currentState.blank
-                      ? colors.primary
-                      : colors.border,
-                },
-              ]}
-            >
-              <Ionicons
-                name="remove-circle-outline"
-                size={18}
-                color={
-                  currentState.blank
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              />
-
-              <Text
-                style={[
-                  styles.blankButtonText,
-                  {
-                    color:
-                      currentState.blank
-                        ? colors.primary
-                        : colors.textMuted,
-                  },
-                ]}
-              >
-                {currentState.blank
-                  ? 'En blanco'
-                  : 'Dejar en blanco'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={
-                next
+              onPress={() =>
+                void doFinish()
               }
               disabled={
                 finishing ||
-                submitting ||
-                (correctionMode ===
-                  'immediate' &&
-                  !currentState.submitted)
+                submitting
               }
+              activeOpacity={0.85}
               style={[
-                styles.navigationButton,
+                styles.finishButton,
                 {
                   backgroundColor:
-                    colors.primary,
-                  borderColor:
                     colors.primary,
                   opacity:
                     finishing ||
-                    submitting ||
-                    (correctionMode ===
-                      'immediate' &&
-                      !currentState.submitted)
+                    submitting
                       ? 0.55
                       : 1,
                 },
               ]}
             >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={22}
+                color={
+                  colors.primaryText
+                }
+              />
+
               <Text
                 style={[
-                  styles.navigationText,
+                  styles.finishButtonText,
                   {
                     color:
                       colors.primaryText,
                   },
                 ]}
               >
-                {isLast
-                  ? 'Finalizar'
-                  : 'Siguiente'}
+                TERMINAR TEST
               </Text>
-
-              <Ionicons
-                name={
-                  isLast
-                    ? 'checkmark'
-                    : 'arrow-forward'
-                }
-                size={19}
-                color={
-                  colors.primaryText
-                }
-              />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* NAVEGADOR DESKTOP */}
-
-        {isDesktop &&
-          showQuestionNavigator && (
-            <View
-              style={[
-                styles.navigator,
-                {
-                  backgroundColor:
-                    colors.surface,
-                  borderColor:
-                    colors.border,
-                },
-              ]}
-            >
-              <View
-                style={
-                  styles.navigatorHeader
-                }
-              >
-                <View>
-                  <Text
-                    style={[
-                      styles.navigatorTitle,
-                      {
-                        color:
-                          colors.text,
-                      },
-                    ]}
-                  >
-                    Preguntas
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.navigatorSubtitle,
-                      {
-                        color:
-                          colors.textMuted,
-                      },
-                    ]}
-                  >
-                    {answeredCount}/
-                    {
-                      loadedTest.totalQuestions
-                    }{' '}
-                    contestadas
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    setShowQuestionNavigator(
-                      false,
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="close"
-                    size={21}
-                    color={
-                      colors.textMuted
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View
-                style={
-                  styles.navigatorStats
-                }
-              >
-                <View
-                  style={
-                    styles.navigatorStat
-                  }
-                >
-                  <View
-                    style={[
-                      styles.legendDot,
-                      {
-                        backgroundColor:
-                          colors.primary,
-                      },
-                    ]}
-                  />
-
-                  <Text
-                    style={[
-                      styles.legendText,
-                      {
-                        color:
-                          colors.textMuted,
-                      },
-                    ]}
-                  >
-                    Contestada
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.navigatorStat
-                  }
-                >
-                  <View
-                    style={[
-                      styles.legendDot,
-                      {
-                        backgroundColor:
-                          colors.border,
-                      },
-                    ]}
-                  />
-
-                  <Text
-                    style={[
-                      styles.legendText,
-                      {
-                        color:
-                          colors.textMuted,
-                      },
-                    ]}
-                  >
-                    Pendiente
-                  </Text>
-                </View>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.navigatorGrid
-                }
-              >
-                {loadedTest.questions.map(
-                  (
-                    _item,
-                    questionIndex,
-                  ) => {
-                    const state =
-                      questionStates[
-                        questionIndex
-                      ];
-
-                    const active =
-                      questionIndex ===
-                      index;
-
-                    const answered =
-                      !!state?.answered;
-
-                    const review =
-                      !!state?.markedForReview;
-
-                    const favorite =
-                      !!state?.favorite;
-
-                    return (
-                      <TouchableOpacity
-                        key={
-                          questionIndex
-                        }
-                        onPress={() =>
-                          goToQuestion(
-                            questionIndex,
-                          )
-                        }
-                        style={[
-                          styles.navigatorQuestion,
-                          {
-                            backgroundColor:
-                              active
-                                ? colors.primary
-                                : answered
-                                ? `${colors.primary}18`
-                                : colors.background,
-                            borderColor:
-                              active
-                                ? colors.primary
-                                : answered
-                                ? colors.primary
-                                : colors.border,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.navigatorQuestionText,
-                            {
-                              color:
-                                active
-                                  ? colors.primaryText
-                                  : colors.text,
-                            },
-                          ]}
-                        >
-                          {questionIndex +
-                            1}
-                        </Text>
-
-                        {review && (
-                          <View
-                            style={[
-                              styles.navigatorReview,
-                              {
-                                backgroundColor:
-                                  colors.primary,
-                              },
-                            ]}
-                          />
-                        )}
-
-                        {favorite && (
-                          <Ionicons
-                            name="star"
-                            size={9}
-                            color={
-                              colors.primary
-                            }
-                            style={
-                              styles.navigatorFavorite
-                            }
-                          />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  },
-                )}
-              </ScrollView>
-
-              <View
-                style={[
-                  styles.navigatorFooter,
-                  {
-                    borderTopColor:
-                      colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.navigatorFooterText,
-                    {
-                      color:
-                        colors.textMuted,
-                    },
-                  ]}
-                >
-                  {reviewCount}{' '}
-                  para repasar ·{' '}
-                  {blankCount}{' '}
-                  en blanco
-                </Text>
-              </View>
-            </View>
-          )}
+        </ScrollView>
       </View>
-
-      {/* NAVEGADOR MÓVIL */}
-
-      {!isDesktop &&
-        showQuestionNavigator && (
-          <View
-            style={[
-              styles.mobileNavigatorOverlay,
-              {
-                backgroundColor:
-                  'rgba(0,0,0,0.45)',
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.mobileNavigator,
-                {
-                  backgroundColor:
-                    colors.background,
-                  borderTopColor:
-                    colors.border,
-                },
-              ]}
-            >
-              <View
-                style={
-                  styles.mobileNavigatorHeader
-                }
-              >
-                <View>
-                  <Text
-                    style={[
-                      styles.navigatorTitle,
-                      {
-                        color:
-                          colors.text,
-                      },
-                    ]}
-                  >
-                    Preguntas
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.navigatorSubtitle,
-                      {
-                        color:
-                          colors.textMuted,
-                      },
-                    ]}
-                  >
-                    {answeredCount}/
-                    {
-                      loadedTest.totalQuestions
-                    }{' '}
-                    contestadas
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    setShowQuestionNavigator(
-                      false,
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="close"
-                    size={23}
-                    color={
-                      colors.textMuted
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.mobileNavigatorGrid
-                }
-              >
-                {loadedTest.questions.map(
-                  (
-                    _item,
-                    questionIndex,
-                  ) => {
-                    const state =
-                      questionStates[
-                        questionIndex
-                      ];
-
-                    const active =
-                      questionIndex ===
-                      index;
-
-                    const answered =
-                      !!state?.answered;
-
-                    const review =
-                      !!state?.markedForReview;
-
-                    return (
-                      <TouchableOpacity
-                        key={
-                          questionIndex
-                        }
-                        onPress={() =>
-                          goToQuestion(
-                            questionIndex,
-                          )
-                        }
-                        style={[
-                          styles.navigatorQuestion,
-                          {
-                            backgroundColor:
-                              active
-                                ? colors.primary
-                                : answered
-                                ? `${colors.primary}18`
-                                : colors.surface,
-                            borderColor:
-                              active
-                                ? colors.primary
-                                : answered
-                                ? colors.primary
-                                : colors.border,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.navigatorQuestionText,
-                            {
-                              color:
-                                active
-                                  ? colors.primaryText
-                                  : colors.text,
-                            },
-                          ]}
-                        >
-                          {questionIndex +
-                            1}
-                        </Text>
-
-                        {review && (
-                          <View
-                            style={[
-                              styles.navigatorReview,
-                              {
-                                backgroundColor:
-                                  colors.primary,
-                              },
-                            ]}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  },
-                )}
-              </ScrollView>
-
-              <View
-                style={[
-                  styles.mobileNavigatorFooter,
-                  {
-                    borderTopColor:
-                      colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.navigatorFooterText,
-                    {
-                      color:
-                        colors.textMuted,
-                    },
-                  ]}
-                >
-                  {reviewCount}{' '}
-                  para repasar ·{' '}
-                  {blankCount}{' '}
-                  en blanco
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
 
       {/* CONFIRMACIÓN FINAL */}
 
@@ -2374,6 +2154,21 @@ const styles = StyleSheet.create({
     gap: 7,
   },
 
+  counterBadge: {
+    minWidth: 48,
+    height: 34,
+    paddingHorizontal: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  counterBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
   timerBar: {
     minHeight: 42,
     borderBottomWidth: 1,
@@ -2404,38 +2199,51 @@ const styles = StyleSheet.create({
   },
 
   mainAreaDesktop: {
-    flexDirection: 'row',
+    alignItems: 'center',
   },
 
-  questionPanel: {
-    flex: 1,
-  },
-
-  questionPanelDesktop: {
-    maxWidth: 900,
-    alignSelf: 'center',
+  questionsContent: {
     width: '100%',
+    padding: 16,
+    paddingBottom: 45,
   },
 
-  questionContent: {
-    padding: 18,
-    paddingBottom: 150,
+  questionsContentDesktop: {
+    maxWidth: 950,
+    alignSelf: 'center',
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 55,
+  },
+
+  questionCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 17,
+    marginBottom: 15,
   },
 
   questionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 10,
     marginBottom: 16,
+  },
+
+  questionHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
   },
 
   questionBadge: {
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor:
-      'rgba(128,128,128,0.08)',
   },
 
   questionBadgeText: {
@@ -2444,30 +2252,44 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
 
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+
+  statusBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+
   questionActions: {
     flexDirection: 'row',
+    gap: 6,
   },
 
   actionButton: {
     minHeight: 36,
     borderRadius: 11,
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    gap: 5,
   },
 
   actionText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
 
   statement: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    lineHeight: 28,
-    marginBottom: 22,
+    lineHeight: 27,
+    marginBottom: 19,
   },
 
   answer: {
@@ -2476,7 +2298,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    marginBottom: 10,
+    marginBottom: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -2498,7 +2320,7 @@ const styles = StyleSheet.create({
   },
 
   explanation: {
-    marginTop: 12,
+    marginTop: 10,
     borderWidth: 1,
     borderRadius: 15,
     padding: 15,
@@ -2522,7 +2344,7 @@ const styles = StyleSheet.create({
   },
 
   blankNotice: {
-    marginTop: 12,
+    marginTop: 10,
     borderWidth: 1,
     borderRadius: 14,
     padding: 13,
@@ -2537,45 +2359,27 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+  questionFooter: {
+    marginTop: 13,
+    paddingTop: 13,
     borderTopWidth: 1,
-    paddingHorizontal: 12,
-    paddingTop: 9,
-    paddingBottom:
-      Platform.OS === 'web'
-        ? 10
-        : 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    justifyContent: 'space-between',
+    gap: 10,
   },
 
-  navigationButton: {
-    minHeight: 48,
-    borderRadius: 13,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-
-  navigationText: {
-    fontSize: 12,
-    fontWeight: '900',
+  questionFooterText: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: '700',
   },
 
   blankButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 13,
+    minHeight: 38,
+    borderRadius: 11,
     borderWidth: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2587,139 +2391,64 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  navigator: {
-    width: 285,
+  finalSummary: {
+    width: '100%',
     borderWidth: 1,
-    borderRadius: 18,
-    margin: 14,
-    marginLeft: 0,
-    overflow: 'hidden',
+    borderRadius: 20,
+    padding: 18,
+    marginTop: 3,
   },
 
-  navigatorHeader: {
-    padding: 15,
+  finalSummaryTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 16,
+  },
+
+  finalSummaryStats: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
 
-  navigatorTitle: {
-    fontSize: 17,
+  finalSummaryStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  finalSummaryNumber: {
+    fontSize: 20,
     fontWeight: '900',
   },
 
-  navigatorSubtitle: {
-    marginTop: 3,
-    fontSize: 10,
-  },
-
-  navigatorStats: {
-    paddingHorizontal: 15,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    gap: 12,
-  },
-
-  navigatorStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-
-  legendDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-
-  legendText: {
+  finalSummaryLabel: {
+    marginTop: 4,
     fontSize: 9,
+    textAlign: 'center',
   },
 
-  navigatorGrid: {
-    padding: 12,
+  finalSummaryHint: {
+    marginTop: 15,
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+
+  finishButton: {
+    minHeight: 56,
+    borderRadius: 15,
+    marginTop: 18,
+    paddingHorizontal: 18,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-
-  navigatorQuestion: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-  },
-
-  navigatorQuestionText: {
-    fontSize: 11,
-    fontWeight: '900',
-  },
-
-  navigatorReview: {
-    position: 'absolute',
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    top: 4,
-    left: 4,
-  },
-
-  navigatorFavorite: {
-    position: 'absolute',
-    right: 4,
-    bottom: 4,
-  },
-
-  navigatorFooter: {
-    borderTopWidth: 1,
-    padding: 12,
-  },
-
-  navigatorFooterText: {
-    fontSize: 9,
-    lineHeight: 15,
-  },
-
-  mobileNavigatorOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'flex-end',
-  },
-
-  mobileNavigator: {
-    maxHeight: '72%',
-    borderTopWidth: 1,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingTop: 8,
-  },
-
-  mobileNavigatorHeader: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  mobileNavigatorGrid: {
-    paddingHorizontal: 18,
-    paddingBottom: 15,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 9,
   },
 
-  mobileNavigatorFooter: {
-    borderTopWidth: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+  finishButtonText: {
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
 
   finishingOverlay: {

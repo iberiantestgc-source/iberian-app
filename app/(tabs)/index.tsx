@@ -57,17 +57,21 @@ function progressProps(stats: any, user: any) {
       Math.max(0, totalQuestions - correct - blank),
   );
 
-  const accuracy =
-    stats?.accuracy != null
-      ? Number(stats.accuracy)
-      : totalQuestions > 0
-        ? Math.round((correct / totalQuestions) * 100)
-        : 0;
+  // Donut: cobertura del temario (artículos → subtema → tema → media)
+  // Fallback a accuracy si el backend aún no envía progressPercent
+  const progressPercent =
+    stats?.progressPercent != null
+      ? Number(stats.progressPercent)
+      : stats?.accuracy != null
+        ? Number(stats.accuracy)
+        : totalQuestions > 0
+          ? Math.round((correct / totalQuestions) * 100)
+          : 0;
 
   return {
     xp: stats?.xp ?? user?.xp ?? 0,
     streak: stats?.dailyStreak ?? user?.dailyStreak ?? 0,
-    accuracy,
+    accuracy: progressPercent,
     tests: stats?.testsCompleted ?? stats?.totalTests ?? 0,
     correct,
     wrong,

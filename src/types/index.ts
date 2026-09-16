@@ -59,6 +59,7 @@ export interface TestResult {
   timeSpentSec: number;
   dailyStreak: number;
   newAchievements: { code: string; name: string; xpReward: number }[];
+  percentage?: number;
 }
 
 export interface UserStats {
@@ -67,6 +68,10 @@ export interface UserStats {
   dailyStreak: number;
   totalQuestions: number;
   correctAnswers: number;
+  /** Fallos acumulados (si el backend no lo envía, se calcula en statistics.ts) */
+  wrongCount?: number;
+  /** En blanco acumulados */
+  unansweredCount?: number;
   accuracy: number;
   testsCompleted: number;
   lastStudyDate?: string;
@@ -79,59 +84,65 @@ export interface Opposition {
   code: string;
   description?: string;
 }
+
 // =============================================
 // NUEVOS TIPOS PARA IA - AÑADIR AL FINAL
 // =============================================
 
-export type EstadoAnimo = 'motivado' | 'cansado' | 'frustrado' | 'ansioso' | 'neutro';
+export type EstadoAnimo =
+  | 'motivado'
+  | 'cansado'
+  | 'frustrado'
+  | 'ansioso'
+  | 'neutro';
 
 export type PerfilOpositor =
-    | 'trabajador'
-    | 'tiempo_completo'
-    | 'frustrado'
-    | 'perfeccionista'
-    | 'inconstante'
-    | 'ansioso'
-    | 'disciplinado'
-    | 'novato';
+  | 'trabajador'
+  | 'tiempo_completo'
+  | 'frustrado'
+  | 'perfeccionista'
+  | 'inconstante'
+  | 'ansioso'
+  | 'disciplinado'
+  | 'novato';
 
 export interface PerfilUsuario {
-    perfiles: PerfilOpositor[];
-    principal: PerfilOpositor;
-    descripcion: string;
-    consejos: string[];
-    recomendaciones: {
-        duracionSesiones: number;
-        numeroTestsDiarios: number;
-        dificultadRecomendada: 'facil' | 'media' | 'dificil';
-    };
+  perfiles: PerfilOpositor[];
+  principal: PerfilOpositor;
+  descripcion: string;
+  consejos: string[];
+  recomendaciones: {
+    duracionSesiones: number;
+    numeroTestsDiarios: number;
+    dificultadRecomendada: 'facil' | 'media' | 'dificil';
+  };
 }
 
 export interface TendenciaEmocional {
-    estados: EstadoAnimo[];
-    estadoPredominante: EstadoAnimo;
-    tendencia: 'mejorando' | 'estable' | 'empeorando';
-    mensaje: string;
+  estados: EstadoAnimo[];
+  estadoPredominante: EstadoAnimo;
+  tendencia: 'mejorando' | 'estable' | 'empeorando';
+  mensaje: string;
 }
 
 export interface ComparativaUsuario {
-    usuario: {
-        tasaAcierto: number;
-        totalTests: number;
-        promedioHoras: number;
-        racha: number;
-    };
-    percentiles: {
-        tasaAcierto: number;
-        totalTests: number;
-        promedioHoras: number;
-        racha: number;
-    };
-    mensajes: {
-        tasaAcierto: string;
-        totalTests: string;
-        promedioHoras: string;
-        racha: string;
-    };
-    totalUsuariosComparables: number;
+  usuario: {
+    tasaAcierto: number;
+    totalTests: number;
+    promedioHoras: number;
+    racha: number;
+  };
+  percentiles: {
+    tasaAcierto: number;
+    totalTests: number;
+    promedioHoras: number;
+    racha: number;
+  };
+  mensajes: {
+    tasaAcierto: string;
+    totalTests: string;
+    promedioHoras: string;
+    racha: string;
+  };
+  totalUsuariosComparables: number;
 }

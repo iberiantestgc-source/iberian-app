@@ -40,6 +40,41 @@ function isPremiumPlan(plan: string | undefined | null): boolean {
   );
 }
 
+function progressProps(stats: any, user: any) {
+  const totalQuestions = Number(stats?.totalQuestions ?? 0);
+  const correct = Number(
+    stats?.correctAnswers ??
+      stats?.correctCount ??
+      user?.correctAnswers ??
+      0,
+  );
+  const blank = Number(
+    stats?.unansweredCount ?? stats?.blankCount ?? 0,
+  );
+  const wrong = Number(
+    stats?.wrongCount ??
+      stats?.incorrectAnswers ??
+      Math.max(0, totalQuestions - correct - blank),
+  );
+
+  const accuracy =
+    stats?.accuracy != null
+      ? Number(stats.accuracy)
+      : totalQuestions > 0
+        ? Math.round((correct / totalQuestions) * 100)
+        : 0;
+
+  return {
+    xp: stats?.xp ?? user?.xp ?? 0,
+    streak: stats?.dailyStreak ?? user?.dailyStreak ?? 0,
+    accuracy,
+    tests: stats?.testsCompleted ?? stats?.totalTests ?? 0,
+    correct,
+    wrong,
+    blank,
+  };
+}
+
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { colors } = useThemeStore();
@@ -55,6 +90,7 @@ export default function HomeScreen() {
 
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const isPremium = isPremiumPlan(plan);
+  const grid = progressProps(stats, user);
 
   const load = async () => {
     try {
@@ -70,7 +106,6 @@ export default function HomeScreen() {
     load();
   }, []);
 
-  // Plan + popup Premium solo si FREE
   useEffect(() => {
     getMySubscription()
       .then((d) => {
@@ -160,7 +195,6 @@ export default function HomeScreen() {
     : 0;
 
   const goalQuestions = 20;
-
   const progress = Math.round((questionsToday / goalQuestions) * 100);
 
   const quickActions = [
@@ -310,12 +344,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <ProgressGrid
-                  xp={stats?.xp ?? user?.xp ?? 0}
-                  streak={stats?.dailyStreak ?? 0}
-                  accuracy={stats?.accuracy ?? 0}
-                  tests={stats?.testsCompleted ?? 0}
-                />
+                <ProgressGrid {...grid} />
               </>
             ) : (
               <>
@@ -369,12 +398,7 @@ export default function HomeScreen() {
 
                 <QuickActions actions={quickActions} />
 
-                <ProgressGrid
-                  xp={stats?.xp ?? user?.xp ?? 0}
-                  streak={stats?.dailyStreak ?? 0}
-                  accuracy={stats?.accuracy ?? 0}
-                  tests={stats?.testsCompleted ?? 0}
-                />
+                <ProgressGrid {...grid} />
               </>
             )}
           </View>

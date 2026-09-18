@@ -15,7 +15,7 @@ import { router } from 'expo-router';
 
 import { useAuthStore } from '../../src/context/authStore';
 import { getMyStats } from '../../src/api/statistics';
-import { generateQuickTest } from '../../src/api/tests';
+import { generateQuickTest, generateFailedTest } from '../../src/api/tests';
 import { getMySubscription } from '../../src/api/subscriptions';
 import { useThemeStore } from '../../src/context/themeStore';
 
@@ -57,8 +57,6 @@ function progressProps(stats: any, user: any) {
       Math.max(0, totalQuestions - correct - blank),
   );
 
-  // Donut: cobertura del temario (artículos → subtema → tema → media)
-  // Fallback a accuracy si el backend aún no envía progressPercent
   const progressPercent =
     stats?.progressPercent != null
       ? Number(stats.progressPercent)
@@ -113,8 +111,7 @@ export default function HomeScreen() {
   useEffect(() => {
     getMySubscription()
       .then((d) => {
-        const p =
-          d.limits?.plan || d.subscription?.plan || 'FREE';
+        const p = d.limits?.plan || d.subscription?.plan || 'FREE';
         setPlan(p);
 
         if (!isPremiumPlan(p)) {
@@ -194,6 +191,44 @@ export default function HomeScreen() {
     }
   };
 
+  const startFailedTest = async () => {
+    if (startingTest) {
+      return;
+    }
+
+    setStartingTest(true);
+    setErrorMsg(null);
+
+    try {
+      const test = await generateFailedTest(10);
+
+      if (!test?.attemptId || !test?.questions?.length) {
+        throw new Error('No hay preguntas falladas para repasar.');
+      }
+
+      router.push({
+        pathname: `/test/${test.attemptId}` as any,
+        params: {
+          payload: JSON.stringify(test),
+        },
+      });
+    } catch (e: any) {
+      const message =
+        e?.response?.data?.message ||
+        e?.message ||
+        'No se pudo generar el test de falladas.';
+
+      const text = Array.isArray(message)
+        ? message.join('\n')
+        : String(message);
+
+      setErrorMsg(text);
+      Alert.alert('Falladas', text);
+    } finally {
+      setStartingTest(false);
+    }
+  };
+
   const questionsToday = stats?.last7Days?.total
     ? Math.min(Number(stats.last7Days.total) || 0, 20)
     : 0;
@@ -218,7 +253,7 @@ export default function HomeScreen() {
       key: 'falladas',
       label: 'Falladas',
       icon: 'refresh' as const,
-      onPress: () => router.push('/(tabs)/study'),
+      onPress: startFailedTest,
     },
     {
       key: 'ranking',
@@ -270,9 +305,7 @@ export default function HomeScreen() {
         >
           <HomeHeader userName={user?.name} />
 
-          <View
-            style={[styles.body, isDesktop && styles.bodyDesktop]}
-          >
+          <View style={[styles.body, isDesktop && styles.bodyDesktop]}>
             {errorMsg ? (
               <Text
                 style={{

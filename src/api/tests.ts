@@ -24,23 +24,15 @@ export type TestSelection =
 export interface GenerateTestParams {
   oppositionId: string;
   count: number;
-
   type?: TestType;
-
   selection?: TestSelection;
-
   topicId?: string;
   topicIds?: string[];
-
   lawId?: string;
-
   articleId?: string;
   articleIds?: string[];
-
   difficulty?: string;
-
   timeLimitSec?: number;
-
   excludeIds?: string[];
 }
 
@@ -51,7 +43,6 @@ export async function generateTest(
     '/tests/generate',
     params,
   );
-
   return data;
 }
 
@@ -69,7 +60,6 @@ export async function submitAnswer(
       timeSpentMs,
     },
   );
-
   return data;
 }
 
@@ -84,14 +74,10 @@ export async function submitBlankAnswer(
   const { data } = await api.post<{
     unanswered: boolean;
     questionId: string;
-  }>(
-    `/tests/attempts/${attemptId}/answer/blank`,
-    {
-      questionId,
-      timeSpentMs,
-    },
-  );
-
+  }>(`/tests/attempts/${attemptId}/answer/blank`, {
+    questionId,
+    timeSpentMs,
+  });
   return data;
 }
 
@@ -101,21 +87,11 @@ export async function finishTest(
   const { data } = await api.post<TestResult>(
     `/tests/attempts/${attemptId}/finish`,
   );
-
   return data;
 }
 
 /**
- * Genera un test rápido desde el botón Test del Home.
- *
- * Flujo:
- * Home → generar test → pantalla de preguntas.
- *
- * Test normal:
- * - 10 preguntas
- * - Banco completo
- * - PRACTICE
- * - 14:24 de tiempo
+ * Test rápido desde Home (10 preguntas, PRACTICE).
  */
 export async function generateQuickTest(): Promise<GeneratedTest> {
   const { data } = await api.get('/oppositions');
@@ -130,9 +106,7 @@ export async function generateQuickTest(): Promise<GeneratedTest> {
     list.find(
       (item: any) =>
         item?.code === 'GC' ||
-        /guardia\s*civil/i.test(
-          item?.name || '',
-        ),
+        /guardia\s*civil/i.test(item?.name || ''),
     ) || list[0];
 
   if (!opposition?.id) {
@@ -147,5 +121,41 @@ export async function generateQuickTest(): Promise<GeneratedTest> {
     type: 'PRACTICE',
     selection: 'GLOBAL',
     timeLimitSec: 864,
+  });
+}
+
+/**
+ * Test de preguntas falladas (Home → Falladas).
+ */
+export async function generateFailedTest(
+  count = 10,
+): Promise<GeneratedTest> {
+  const { data } = await api.get('/oppositions');
+
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+      ? data.items
+      : [];
+
+  const opposition =
+    list.find(
+      (item: any) =>
+        item?.code === 'GC' ||
+        /guardia\s*civil/i.test(item?.name || ''),
+    ) || list[0];
+
+  if (!opposition?.id) {
+    throw new Error(
+      'No se encontró la oposición de Guardia Civil en el servidor.',
+    );
+  }
+
+  return generateTest({
+    oppositionId: opposition.id,
+    count,
+    type: 'FAILED_ONLY',
+    selection: 'GLOBAL',
+    timeLimitSec: Math.round(count * 86.4),
   });
 }
